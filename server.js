@@ -24,6 +24,8 @@ async function startServer() {
     await require("./workers/aiNotification.js")(io, pubClient);
     await require("./sockets/aiNotification.js")(io, pubClient);
     require("./workers/emailVerification.worker");
+    // Import and start the stuck task worker
+    require("./workers/stuckTask.worker");
     // ✅ START ONLY ONE SERVER
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);

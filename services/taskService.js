@@ -1,7 +1,8 @@
 const mongoose = require("mongoose");
-const { Task, WorkspaceMember } = require("../models/index");
+const { Task, WorkspaceMember, User } = require("../models/index"); // ensure User is imported
 const { Queue } = require("bullmq");
 const IORedis = require("ioredis");
+const { scheduleStuckCheck } = require("../queues/stuckTaskQueue"); // 👈 import the scheduler
 
 const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 const redisOpts = { maxRetriesPerRequest: null };
@@ -19,19 +20,26 @@ function normalizeProgressByStatus(status, actualProgress) {
     return actualProgress;
 }
 
-async function createTaskService(workspaceId, title, description, status, actualProgress, assigneeUserId, projectId, milestoneId, dueDate, dependency, userId) {
-    userId = "6826c1a9f1b2d44c9a777777"
-    console.log(userId)
+// ---------- CREATE TASK ----------
+async function createTaskService(
+    workspaceId,
+    title,
+    description,
+    status,
+    actualProgress,
+    assigneeUserId,
+    projectId,
+    milestoneId,
+    dueDate,
+    dependency,
+    userId
+) {
+    userId = "6826c1a9f1b2d44c9a777777";
+    console.log(userId);
 
-    // remember to remove these comments of validation
-    // const isMember = await WorkspaceMember.findOne({
-    //     workspaceId,
-    //     userId
-    // });
-
-    // if (!isMember) {
-    //     return { statuscode: 403, data: null };
-    // }
+    // (validation commented – re-enable when ready)
+    // const isMember = await WorkspaceMember.findOne({ workspaceId, userId });
+    // if (!isMember) return { statuscode: 403, data: null };
 
     const parsedProgress = actualProgress === undefined ? 0 : Number(actualProgress);
     if (Number.isNaN(parsedProgress) || parsedProgress < 0 || parsedProgress > 100) {
@@ -54,33 +62,48 @@ async function createTaskService(workspaceId, title, description, status, actual
         resolvedDependency = dependency;
     }
 
-    const data = await Task.create({ workspaceId, title, description, status, actualProgress: finalProgress, assigneeUserId, projectId, milestoneId, dueDate, dependency: resolvedDependency, createdBy: userId });
+    // Create task – statusEnteredAt defaults to now via schema
+    const data = await Task.create({
+        workspaceId,
+        title,
+        description,
+        status,
+        actualProgress: finalProgress,
+        assigneeUserId,
+        projectId,
+        milestoneId,
+        dueDate,
+        dependency: resolvedDependency,
+        createdBy: userId,
+    });
 
-    const date = new Date(dueDate).getTime();
-
-
-    // add the task to the deadline queue:
+    // Deadline queue (existing)
     const queue = new Queue("DEADLINE_WORKER", { connection });
     await queue.add(
         "task",
         {
             taskId: data._id,
             workspaceId: workspaceId,
-            assigneeUserId: assigneeUserId
+            assigneeUserId: assigneeUserId,
         },
         { delay: 5 * 1000, removeOnComplete: true }
     );
 
+    // ✨ Schedule stuck check if task is in a stuck‑sensitive state
+    if (["blocked", "waiting-review"].includes(status)) {
+        await scheduleStuckCheck(data);
+    }
+
     return { statuscode: 201, data: data };
 }
 
+// ---------- UPDATE TASK ----------
 async function updateTaskService(taskId, userId, body) {
     if (!userId) {
         return { statuscode: 400, data: null };
     }
 
-    const task = await Task.findById(taskId, { createdBy: 1 });
-
+    const task = await Task.findById(taskId, { createdBy: 1, status: 1, dueDate: 1 });
     if (!task) {
         return { statuscode: 404, data: null };
     }
@@ -112,15 +135,26 @@ async function updateTaskService(taskId, userId, body) {
         }
     }
 
+    // ✨ If status is changing, update statusEnteredAt
+    if (body.status && body.status !== task.status) {
+        body.statusEnteredAt = new Date();
+    }
+
     const data = await Task.findOneAndUpdate(
         { _id: taskId },
         { $set: body },
         { new: true }
     );
 
+    // ✨ Re‑schedule stuck check if status or dueDate changed
+    if (body.status !== undefined || body.dueDate !== undefined) {
+        await scheduleStuckCheck(data);
+    }
+
     return { statuscode: 200, data };
 }
 
+// ---------- DELETE TASK ----------
 async function taskDeleteService(taskId, userId) {
     const task = await Task.findById(taskId, { createdBy: 1 });
 
@@ -132,41 +166,47 @@ async function taskDeleteService(taskId, userId) {
         return { statuscode: 403, data: null };
     }
 
+    // Optionally remove pending stuck job (cleanup)
+    // const { stuckTaskQueue } = require("../queues/stuckTaskQueue");
+    // await stuckTaskQueue.remove(`stuck-check-${taskId}`);
+
     const data = await Task.deleteOne({ _id: taskId });
     return { statuscode: 200, data: data };
 }
 
+// ---------- GET BY ID ----------
 async function taskGetByIdService(taskId) {
     const data = await Task.findById({
-        _id: taskId
+        _id: taskId,
     });
 
     return { statuscode: 200, data };
 }
 
+// ---------- GET ALL BY PROJECT ----------
 async function taskGetAllService(projectId) {
     const data = await Task.find({
-        projectId: projectId
+        projectId: projectId,
     });
 
     return { statuscode: 200, data };
 }
 
+// ---------- FILTER BY STATUS & USER ----------
 async function taskFilterService(status, userid) {
     const data = await Task.find({
         status: status,
-        assigneeUserId: userid
+        assigneeUserId: userid,
     });
 
     return { statuscode: 200, data };
 }
 
-
-/*this above function is created to store the tasks created by the AI, this create service is not used for the normal create service*/
-
-async function createTaskMadeByAI(workspaceId, userId, tasks,projectId) {
-
+// ---------- AI BULK CREATE ----------
+/* This function stores tasks created by the AI – it is not used for normal creation. */
+async function createTaskMadeByAI(workspaceId, userId, tasks, projectId) {
     /*
+    Input format:
     {
       "ai_generic_id": "1",
       "title": "Task name",
@@ -179,28 +219,27 @@ async function createTaskMadeByAI(workspaceId, userId, tasks,projectId) {
     */
 
     // STEP 1: Extract emails
-    const emails = tasks.map(task => task.assignee);
+    const emails = tasks.map((task) => task.assignee);
 
     // STEP 2: Fetch users
     const users = await User.find(
         {
-            email: { $in: emails }
+            email: { $in: emails },
         },
         {
             _id: 1,
-            email: 1
+            email: 1,
         }
     );
 
     // STEP 3: Create email -> userId map
     const usersMap = new Map();
-
-    users.forEach(user => {
+    users.forEach((user) => {
         usersMap.set(user.email, user._id);
     });
 
     // STEP 4: Transform tasks
-    const transformedTasks = tasks.map(task => ({
+    const transformedTasks = tasks.map((task) => ({
         ai_generic_id: task.ai_generic_id,
         workspaceId,
         createdBy: userId,
@@ -210,7 +249,8 @@ async function createTaskMadeByAI(workspaceId, userId, tasks,projectId) {
         status: task.status,
         dependency: [],
         dueDate: task.dueDate,
-        projectId:projectId
+        projectId: projectId,
+        // statusEnteredAt will default to now via schema
     }));
 
     // STEP 5: Insert tasks
@@ -218,8 +258,7 @@ async function createTaskMadeByAI(workspaceId, userId, tasks,projectId) {
 
     // STEP 6: Create AI ID -> Mongo _id map
     const taskMap = new Map();
-
-    insertedTasks.forEach(task => {
+    insertedTasks.forEach((task) => {
         taskMap.set(task.ai_generic_id, task._id);
     });
 
@@ -227,13 +266,10 @@ async function createTaskMadeByAI(workspaceId, userId, tasks,projectId) {
     let allIDs = [];
 
     for (let i = 0; i < tasks.length; i++) {
-
         let dependencyIds = [];
 
-        tasks[i].dependency.forEach(dep => {
-
+        tasks[i].dependency.forEach((dep) => {
             const depId = taskMap.get(dep);
-
             if (depId) {
                 dependencyIds.push(depId);
             }
@@ -241,29 +277,38 @@ async function createTaskMadeByAI(workspaceId, userId, tasks,projectId) {
 
         allIDs.push({
             taskId: taskMap.get(tasks[i].ai_generic_id),
-            dependencyIds
+            dependencyIds,
         });
     }
 
     // STEP 8: Create bulk updates
-    const updates = allIDs.map(task => ({
+    const updates = allIDs.map((item) => ({
         updateOne: {
             filter: {
-                _id: task.taskId
+                _id: item.taskId,
             },
             update: {
                 $set: {
-                    dependency: task.dependencyIds
-                }
-            }
-        }
+                    dependency: item.dependencyIds,
+                },
+            },
+        },
     }));
 
     // STEP 9: Bulk update
     await Task.bulkWrite(updates);
 
+    // ✨ Schedule stuck checks for any tasks that are in blocked or waiting-review
+    const stuckStatuses = ["blocked", "waiting-review"];
+    for (const task of insertedTasks) {
+        if (stuckStatuses.includes(task.status)) {
+            await scheduleStuckCheck(task);
+        }
+    }
+
     return insertedTasks;
 }
+
 module.exports = {
     createTaskService,
     updateTaskService,
@@ -271,6 +316,5 @@ module.exports = {
     taskGetByIdService,
     taskGetAllService,
     taskFilterService,
-    createTaskMadeByAI
-}
-
+    createTaskMadeByAI,
+};

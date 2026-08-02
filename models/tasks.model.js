@@ -7,10 +7,7 @@ const commentSchema = new mongoose.Schema(
     content: { type: String, required: true, minlength: 1, maxlength: 4000 },
     timestamp: { type: Date, required: true, default: Date.now },
   },
-  {
-    _id: true,
-    id: false,
-  }
+  { _id: true, id: false }
 );
 
 const taskSchema = new mongoose.Schema(
@@ -19,26 +16,24 @@ const taskSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true, minlength: 1, maxlength: 240 },
     description: { type: String, required: true, maxlength: 4000 },
 
-    // Extended to include blocked / waiting-review — used by the overload
-    // calculator to discount tasks that aren't actively being worked on.
     status: {
       type: String,
       enum: ["todo", "in-progress", "blocked", "waiting-review", "done"],
       required: true,
     },
 
-    // Drives the priorityMultiplier in the overload weight formula
-    // (Low=1.0, Medium=1.5, High=2.0, Critical=3.0).
+    // ✨ NEW: tracks when the current status was applied
+    statusEnteredAt: {
+      type: Date,
+      default: Date.now,
+    },
+
     priority: {
       type: String,
       enum: ["Low", "Medium", "High", "Critical"],
       default: "Medium",
     },
 
-    // Base hours for the overload weight formula. Nullable on purpose —
-    // personScoringWorker.js logs a warning and skips (weight = 0) rather
-    // than guessing, so untracked effort doesn't silently distort the
-    // load_score.
     estimatedEffort: {
       type: Number,
       min: 0,

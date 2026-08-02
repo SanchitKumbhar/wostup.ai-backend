@@ -157,6 +157,7 @@ const validators = {
       },
     },
   },
+  // ─── UPDATED TASKS VALIDATOR ──────────────────────────────────────────────
   tasks: {
     $jsonSchema: {
       bsonType: "object",
@@ -177,7 +178,19 @@ const validators = {
         workspaceId: { bsonType: "objectId" },
         title: { bsonType: "string", minLength: 1, maxLength: 240 },
         description: { bsonType: "string", maxLength: 4000 },
-        status: { enum: ["todo", "in-progress", "done"] },
+        // ✅ extended enum
+        status: { enum: ["todo", "in-progress", "blocked", "waiting-review", "done"] },
+        // ✅ new field for status entry timestamp
+        statusEnteredAt: { bsonType: "date" },
+        // ✅ fields that were missing
+        priority: { enum: ["Low", "Medium", "High", "Critical"] },
+        estimatedEffort: { bsonType: ["double", "null"], minimum: 0 },
+        actualProgress: { bsonType: ["int", "double"], minimum: 0, maximum: 100 },
+        createdBy: { bsonType: "objectId" },
+        dependency: {
+          bsonType: "array",
+          items: { bsonType: "objectId" },
+        },
         assigneeUserId: { bsonType: "objectId" },
         projectId: { bsonType: "objectId" },
         milestoneId: { bsonType: ["objectId", "null"] },
@@ -390,9 +403,8 @@ const validators = {
         resolvedAt: { bsonType: ["date", "null"] },
       }
     }
-  }, // ✅ FIXED: Added missing closing braces for failed_queue_jobs schema
-  
-  // ✅ NEW: auth_otps collection validator
+  },
+
   auth_otps: {
     $jsonSchema: {
       bsonType: "object",
@@ -409,7 +421,6 @@ const validators = {
     },
   },
 
-  // ✅ NEW: security_logs collection validator
   security_logs: {
     $jsonSchema: {
       bsonType: "object",
@@ -438,7 +449,7 @@ const validators = {
       },
     },
   },
-  // ✅ NEW: suggestions collection validator (Conflict Detector Module 03)
+
   suggestions: {
     $jsonSchema: {
       bsonType: "object",
@@ -468,6 +479,49 @@ const validators = {
         phrased_text: { bsonType: ["string", "null"] },
         validated: { bsonType: "bool" },
         model_version: { bsonType: "string" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+
+  // ─── NEW VALIDATOR FOR STUCK SUGGESTIONS ────────────────────────────────────
+  stuck_suggestions: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: [
+        "workspaceId",
+        "projectId",
+        "riskCategory",
+        "scope",
+        "message",
+        "status",
+        "createdAt",
+        "updatedAt",
+      ],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        riskCategory: { enum: ["Stuck Task", "Overload"] },
+        scope: {
+          bsonType: "object",
+          required: ["type", "id"],
+          properties: {
+            type: { enum: ["task"] },
+            id: { bsonType: "objectId" },
+          },
+        },
+        message: { bsonType: "string", minLength: 1 },
+        details: {
+          bsonType: "object",
+          properties: {
+            status: { bsonType: "string" },
+            dwellHours: { bsonType: ["int", "double"] },
+            dueDate: { bsonType: "date" },
+          },
+        },
+        status: { enum: ["active", "resolved", "dismissed"] },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
       },
@@ -503,27 +557,25 @@ const indexes = {
   auth_sessions: [
     { key: { sessionToken: 1 }, options: { unique: true } },
     { key: { userId: 1, expiresAt: 1 } },
-    { key: { userId: 1, revokedAt: 1 } }, // for listing active sessions
+    { key: { userId: 1, revokedAt: 1 } },
   ],
   auth_refresh_tokens: [
     { key: { tokenHash: 1 }, options: { unique: true } },
     { key: { userId: 1, expiresAt: 1 } },
   ],
   auth_password_reset_tokens: [{ key: { tokenHash: 1 }, options: { unique: true } }],
-  auth_email_verification_tokens: [{ key: { tokenHash: 1 }, options: { unique: true } }],  
+  auth_email_verification_tokens: [{ key: { tokenHash: 1 }, options: { unique: true } }],
   failed_queue_jobs: [
     { key: { jobId: 1 } },
     { key: { queueName: 1, status: 1 } },
     { key: { toEmail: 1 } },
     { key: { failedAt: -1 } },
-  ], 
+  ],
   auth_otps: [
     { key: { userId: 1, expiresAt: 1 } },
     { key: { otp: 1 } },
     { key: { expiresAt: 1 } },
   ],
-
-  // ✅ NEW: security_logs indexes
   security_logs: [
     { key: { userId: 1, createdAt: -1 } },
     { key: { eventType: 1 } },
@@ -534,6 +586,11 @@ const indexes = {
       options: { unique: true },
     },
     { key: { workspaceId: 1, risk_category: 1, createdAt: -1 } },
+  ],
+  // ─── NEW INDEXES FOR STUCK_SUGGESTIONS ──────────────────────────────────────
+  stuck_suggestions: [
+    { key: { workspaceId: 1, projectId: 1, "scope.id": 1 }, options: {} },
+    { key: { workspaceId: 1, status: 1, createdAt: -1 } },
   ],
 };
 
