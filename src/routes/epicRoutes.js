@@ -7,7 +7,7 @@ const {
     getEpicByIdController,
     getAllEpicsController,
     deleteEpicController,
-} = require("../controllers/projectsController/epic.Controller");
+} = require("../controllers/projectsController/epic.controller");
 
 // Create epic
 router.post("/v1/createEpic", authMiddleware, createEpicController);
