@@ -163,7 +163,6 @@ const validators = {
         "title",
         "status",
         "assigneeUserId",
-        "projectId",
         "createdBy",
         "createdAt",
         "updatedAt",
@@ -173,20 +172,20 @@ const validators = {
         workspaceId: { bsonType: "objectId" },
         projectId: { bsonType: "objectId" },
         milestoneId: { bsonType: ["objectId", "null"] },
+        sprintId: { bsonType: ["objectId", "null"] },
+        epicId: { bsonType: ["objectId", "null"] },
         title: { bsonType: "string", minLength: 1, maxLength: 240 },
         description: { bsonType: "string", maxLength: 4000 },
-        status: { enum: ["todo", "in-progress", "blocked", "waiting-review", "done"] },
+        status: { enum: ["todo", "in-progress", "blocked", "waiting-review", "done", "backlog"] },
         statusEnteredAt: { bsonType: "date" },
         priority: { enum: ["Low", "Medium", "High", "Critical"] },
         estimatedEffort: { bsonType: ["int", "double", "null"], minimum: 0 },
         actualProgress: { bsonType: ["int", "double"], minimum: 0, maximum: 100 },
         assigneeUserId: { bsonType: "objectId" },
         createdBy: { bsonType: "objectId" },
-        projectId: { bsonType: "objectId" },
-        milestoneId: { bsonType: ["objectId", "null"] },
-        dependency: { 
-          bsonType: "array", 
-          items: { bsonType: "objectId" }
+        dependency: {
+          bsonType: "array",
+          items: { bsonType: "objectId" },
         },
         dueDate: { bsonType: ["date", "null"] },
         comments: {
@@ -201,7 +200,7 @@ const validators = {
               content: { bsonType: "string", minLength: 1, maxLength: 4000 },
               timestamp: { bsonType: "date" },
             },
-          }
+          },
         },
         sender: { bsonType: ["string", "null"] },
         emailId: { bsonType: ["string", "null"] },
@@ -214,7 +213,7 @@ const validators = {
               filename: { bsonType: "string" },
               url: { bsonType: "string" },
             },
-          }
+          },
         },
         emailUrl: { bsonType: ["string", "null"] },
         createdAt: { bsonType: "date" },
@@ -492,9 +491,6 @@ const validators = {
       },
     },
   },
-
-
-  // Add to validators object:
   epics: {
     $jsonSchema: {
       bsonType: "object",
@@ -601,7 +597,7 @@ const indexes = {
   epics: [{ key: { workspaceId: 1, projectId: 1, status: 1 } }],
   sprints: [
     { key: { workspaceId: 1, projectId: 1, status: 1 } },
-    { key: { projectId: 1, startDate: 1, endDate: 1 } }
+    { key: { projectId: 1, startDate: 1, endDate: 1 } },
   ],
 };
 
