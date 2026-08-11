@@ -163,6 +163,7 @@ const validators = {
         "title",
         "status",
         "assigneeUserId",
+        "projectId",
         "createdBy",
         "createdAt",
         "updatedAt",
@@ -175,15 +176,17 @@ const validators = {
         title: { bsonType: "string", minLength: 1, maxLength: 240 },
         description: { bsonType: "string", maxLength: 4000 },
         status: { enum: ["todo", "in-progress", "blocked", "waiting-review", "done"] },
+        statusEnteredAt: { bsonType: "date" },
         priority: { enum: ["Low", "Medium", "High", "Critical"] },
         estimatedEffort: { bsonType: ["int", "double", "null"], minimum: 0 },
         actualProgress: { bsonType: ["int", "double"], minimum: 0, maximum: 100 },
-        statusEnteredAt: { bsonType: "date" },
         assigneeUserId: { bsonType: "objectId" },
         createdBy: { bsonType: "objectId" },
-        dependency: {
-          bsonType: "array",
-          items: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        milestoneId: { bsonType: ["objectId", "null"] },
+        dependency: { 
+          bsonType: "array", 
+          items: { bsonType: "objectId" }
         },
         dueDate: { bsonType: ["date", "null"] },
         comments: {
@@ -198,8 +201,22 @@ const validators = {
               content: { bsonType: "string", minLength: 1, maxLength: 4000 },
               timestamp: { bsonType: "date" },
             },
-          },
+          }
         },
+        sender: { bsonType: ["string", "null"] },
+        emailId: { bsonType: ["string", "null"] },
+        threadId: { bsonType: ["string", "null"] },
+        attachments: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            properties: {
+              filename: { bsonType: "string" },
+              url: { bsonType: "string" },
+            },
+          }
+        },
+        emailUrl: { bsonType: ["string", "null"] },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
         deletedAt: { bsonType: ["date", "null"] },

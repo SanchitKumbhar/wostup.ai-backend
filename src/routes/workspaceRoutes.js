@@ -7,9 +7,9 @@ const {
     getWorkspacesByUserController,
     deleteWorkspaceController 
 } = require("../controllers/workspace/workspace.Controller");
-const { authMiddleware } = require("../middleware/authMiddleware");
+// const { authMiddleware } = require("../middleware/authMiddleware");
 
-router.use(authMiddleware);
+// router.use(authMiddleware);
 
 router.post("/v1/:userid/createWorkspace", createWorkspaceController);
 router.put("/v1/:userid/:workspaceid/update", updateWorkspaceController);
