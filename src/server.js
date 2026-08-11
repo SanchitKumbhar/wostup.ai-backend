@@ -1,5 +1,5 @@
-require('dotenv').config({ path: '../.env' });
-
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") }); // Ensures path resolution
 const { app, server, io } = require("./app"); // ✅ FIXED IMPORT
 const { connectToMongo } = require("./db/mongo");
 const { ensureMongoSchema } = require("./db/schemaSetup");

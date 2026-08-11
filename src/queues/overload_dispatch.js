@@ -38,7 +38,7 @@ const dispatcherWorker = new Worker(
                 userId: _id.assigneeUserId
             });
         }
-
+        
         return { dispatched: activeAssignees.length };
     },
     { connection: redisConnection }

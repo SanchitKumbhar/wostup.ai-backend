@@ -54,8 +54,8 @@ const validators = {
           bsonType: "array",
           items: {
             bsonType: "string",
-            maxLength: 80
-          }
+            maxLength: 80,
+          },
         },
         twoFactorEnabled: { bsonType: "bool" },
         isActive: { bsonType: "bool" },
@@ -111,7 +111,12 @@ const validators = {
         key: { bsonType: "string", maxLength: 10 },
         owner: { bsonType: "objectId" },
         createdBy: { bsonType: "objectId" },
+        projectType: { enum: ["scrum", "kanban"] },
+        color: { bsonType: "string" },
+        icon: { bsonType: "string" },
         status: { enum: ["Planning", "Active", "On Hold", "Completed", "Cancelled"] },
+        priority: { enum: ["Low", "Medium", "High", "Critical"] },
+        visibility: { enum: ["Private", "Workspace"] },
         description: { bsonType: "string", maxLength: 5000 },
         progress: { bsonType: ["int", "double", "decimal"], minimum: 0, maximum: 100 },
         createdAt: { bsonType: "date" },
@@ -126,10 +131,10 @@ const validators = {
       required: [
         "workspaceId",
         "projectId",
+        "createdBy",
         "name",
-        "description",
+        "startDate",
         "dueDate",
-        "completionPercentage",
         "createdAt",
         "updatedAt",
       ],
@@ -137,8 +142,10 @@ const validators = {
         _id: { bsonType: "objectId" },
         workspaceId: { bsonType: "objectId" },
         projectId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
         name: { bsonType: "string", minLength: 1, maxLength: 180 },
         description: { bsonType: "string", maxLength: 2000 },
+        startDate: { bsonType: "date" },
         dueDate: { bsonType: "date" },
         completionPercentage: { bsonType: ["int", "double"], minimum: 0, maximum: 100 },
         createdAt: { bsonType: "date" },
@@ -152,28 +159,33 @@ const validators = {
       bsonType: "object",
       required: [
         "workspaceId",
+        "projectId",
         "title",
-        "description",
         "status",
         "assigneeUserId",
-        "projectId",
-        "dueDate",
-        "comments",
+        "createdBy",
         "createdAt",
         "updatedAt",
       ],
       properties: {
         _id: { bsonType: "objectId" },
         workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        milestoneId: { bsonType: ["objectId", "null"] },
         title: { bsonType: "string", minLength: 1, maxLength: 240 },
         description: { bsonType: "string", maxLength: 4000 },
         status: { enum: ["todo", "in-progress", "blocked", "waiting-review", "done"] },
-        assigneeUserId: { bsonType: "objectId" },
-        projectId: { bsonType: "objectId" },
-        milestoneId: { bsonType: ["objectId", "null"] },
-        dueDate: { bsonType: "date" },
-        // NEW: track when the current status was entered
+        priority: { enum: ["Low", "Medium", "High", "Critical"] },
+        estimatedEffort: { bsonType: ["int", "double", "null"], minimum: 0 },
+        actualProgress: { bsonType: ["int", "double"], minimum: 0, maximum: 100 },
         statusEnteredAt: { bsonType: "date" },
+        assigneeUserId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
+        dependency: {
+          bsonType: "array",
+          items: { bsonType: "objectId" },
+        },
+        dueDate: { bsonType: ["date", "null"] },
         comments: {
           bsonType: "array",
           items: {
@@ -378,8 +390,8 @@ const validators = {
         status: { enum: ["failed", "retried", "resolved"] },
         failedAt: { bsonType: "date" },
         resolvedAt: { bsonType: ["date", "null"] },
-      }
-    }
+      },
+    },
   },
   auth_otps: {
     $jsonSchema: {
@@ -415,7 +427,7 @@ const validators = {
             "EMAIL_VERIFIED",
             "2FA_ENABLED",
             "2FA_DISABLED",
-          ]
+          ],
         },
         deviceSummary: { bsonType: ["string", "null"], maxLength: 255 },
         ipAddress: { bsonType: ["string", "null"], maxLength: 64 },
@@ -431,7 +443,6 @@ const validators = {
       properties: {
         _id: { bsonType: "objectId" },
         workspaceId: { bsonType: "objectId" },
-        // NEW: projectId (optional) for stuck task alerts
         projectId: { bsonType: "objectId" },
         risk_category: {
           enum: [
@@ -439,8 +450,8 @@ const validators = {
             "Dependency Conflict",
             "Milestone Mismatch",
             "Due-Date Clustering",
-            "Stuck Task",     // NEW
-            "Overload",       // NEW
+            "Stuck Task",
+            "Overload",
           ],
         },
         risk_score: { bsonType: ["int", "double"] },
@@ -453,16 +464,60 @@ const validators = {
             id: { bsonType: "objectId" },
           },
         },
-        // NEW: message field (optional)
         message: { bsonType: "string" },
         details: { bsonType: ["object", "null"] },
         phrased_text: { bsonType: ["string", "null"] },
         validated: { bsonType: "bool" },
         model_version: { bsonType: "string" },
-        // NEW: status lifecycle
         status: { enum: ["active", "resolved", "dismissed"] },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+
+
+  // Add to validators object:
+  epics: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "projectId", "createdBy", "name", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
+        name: { bsonType: "string", minLength: 1, maxLength: 180 },
+        summary: { bsonType: "string", maxLength: 500 },
+        description: { bsonType: "string", maxLength: 4000 },
+        color: { bsonType: "string" },
+        status: { enum: ["To Do", "In Progress", "Done"] },
+        startDate: { bsonType: ["date", "null"] },
+        dueDate: { bsonType: ["date", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+        deletedAt: { bsonType: ["date", "null"] },
+      },
+    },
+  },
+  sprints: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "projectId", "createdBy", "name", "startDate", "endDate", "status", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
+        name: { bsonType: "string", minLength: 1, maxLength: 120 },
+        goal: { bsonType: "string", maxLength: 2000 },
+        status: { enum: ["future", "active", "completed"] },
+        startDate: { bsonType: "date" },
+        endDate: { bsonType: "date" },
+        completedAt: { bsonType: ["date", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+        deletedAt: { bsonType: ["date", "null"] },
       },
     },
   },
@@ -476,7 +531,7 @@ const indexes = {
   ],
   projects: [
     { key: { workspaceId: 1, status: 1, updatedAt: -1 } },
-    { key: { workspaceId: 1, ownerUserId: 1 } },
+    { key: { workspaceId: 1, owner: 1 } },
   ],
   milestones: [{ key: { workspaceId: 1, projectId: 1, dueDate: 1 } }],
   tasks: [
@@ -526,20 +581,22 @@ const indexes = {
     },
     { key: { workspaceId: 1, risk_category: 1, createdAt: -1 } },
   ],
+  epics: [{ key: { workspaceId: 1, projectId: 1, status: 1 } }],
+  sprints: [
+    { key: { workspaceId: 1, projectId: 1, status: 1 } },
+    { key: { projectId: 1, startDate: 1, endDate: 1 } }
+  ],
 };
 
 async function ensureMongoSchema() {
   const connection = getMongoConnection();
   const db = connection.db;
-
   if (!db) {
     throw new Error("MongoDB connection is not initialized");
   }
-
   for (const [collectionName, validator] of Object.entries(validators)) {
     await createOrUpdateCollection(db, collectionName, validator);
   }
-
   for (const [collectionName, collectionIndexes] of Object.entries(indexes)) {
     await ensureIndexes(db, collectionName, collectionIndexes);
   }
