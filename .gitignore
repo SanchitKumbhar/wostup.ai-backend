@@ -1,7 +1,7 @@
 .env
 /.env.local
 /.env.development.local
-/src/node_modules
+node_modules
 /scripts/auth_e2e_test.js
 scripts/auth_e2e_test.js
 *.md

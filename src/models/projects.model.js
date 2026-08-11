@@ -98,6 +98,12 @@ const projectSchema = new mongoose.Schema(
       maxlength: 5000,
     },
 
+    projectType:{
+      type:String,
+      enum:["scrum","kanban"],
+      default : "kanban"
+    },
+
     color: {
       type: String,
       default: "#3B82F6",

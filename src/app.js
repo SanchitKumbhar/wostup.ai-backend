@@ -19,6 +19,8 @@ const sessionsRoutes = require("./routes/sessions"); // ✅ already required
 const conflictDetectorRoutes = require("./routes/conflictDetectorRoutes");
 const addonRoutes = require("./routes/addonRoutes");
 
+const epicRoutes = require("./routes/epicRoutes");
+const sprintRoutes = require("./routes/sprintRoutes");
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -43,6 +45,9 @@ app.use("/api/sessions", sessionsRoutes); // ✅ use the variable
 app.use("/api/conflicts", conflictDetectorRoutes);
 app.use("/api/addon", addonRoutes);
 
+
+app.use("/api/epics", epicRoutes);
+app.use("/api/sprints", sprintRoutes);
 // error handler
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error", err);

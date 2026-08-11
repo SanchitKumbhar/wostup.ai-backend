@@ -1,6 +1,7 @@
 const { Worker } = require("bullmq");
 const IORedis = require("ioredis");
-const { Task, Suggestion } = require("../models"); 
+const { Task, Suggestion, Project } = require("../models"); // 1. Added Project model
+const aiNotificationQueue = require("../queues/aiNotificationQueue"); // 2. Import AI Notification Queue
 
 const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
 const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
@@ -19,7 +20,7 @@ const stuckTaskWorker = new Worker(
       const statusEntered = task.statusEnteredAt || task.updatedAt;
       const dwellHours = Math.round((now - new Date(statusEntered)) / (1000 * 60 * 60));
 
-      // Insert alert into Suggestions collection
+      // 1. Insert alert into Suggestions collection
       await Suggestion.create({
         workspaceId: task.workspaceId,
         projectId: task.projectId,
@@ -37,8 +38,25 @@ const stuckTaskWorker = new Worker(
         model_version: "stuck_detector_v1",
       });
 
-      // Optional: trigger notification to manager/assignee
-      console.log(`[STUCK TASK DETECTED] Task ID: ${task._id} | Status: ${task.status}`);
+      // 2. Trigger notification to Project Owner + Task Assignee
+      const project = await Project.findById(task.projectId, { owner: 1 }).lean(); //
+
+      const recipientSet = new Set();
+      if (task.assigneeUserId) recipientSet.add(task.assigneeUserId.toString()); //[cite: 1]
+      if (project && project.owner) recipientSet.add(project.owner.toString()); //[cite: 1]
+
+      const recipientUserIds = Array.from(recipientSet); //[cite: 1]
+
+      if (recipientUserIds.length > 0) {
+        await aiNotificationQueue.add("send-ai-alert", {
+          workspaceId: task.workspaceId,
+          recipientUserIds,
+          message: `Stuck Task Alert: "${task.title}" has been stuck in '${task.status}' for ${dwellHours} hours.`,
+          type: "ai",
+        }); //[cite: 1]
+      }
+
+      console.log(`[STUCK TASK DETECTED & NOTIFIED] Task ID: ${task._id} | Status: ${task.status}`); //[cite: 1]
     }
   },
   { connection }

@@ -130,7 +130,7 @@ const personScoringWorker = new Worker(
             { $set: { ...result, date: todayStr } },
             { upsert: true }
         );
-
+        console.log(result)
         return { ...result, date: todayStr };
     },
     {

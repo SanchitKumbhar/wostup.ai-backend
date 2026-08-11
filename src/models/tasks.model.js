@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const commentSchema = new mongoose.Schema(
   {
-    authorUserId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    authorUserId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "User" },
     authorName: { type: String, required: true, trim: true, minlength: 1, maxlength: 120 },
     content: { type: String, required: true, minlength: 1, maxlength: 4000 },
     timestamp: { type: Date, required: true, default: Date.now },
@@ -12,12 +12,17 @@ const commentSchema = new mongoose.Schema(
 
 const taskSchema = new mongoose.Schema(
   {
-    workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Workspace" },
+    projectId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Project" },
+    sprintId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Sprints" },
+    epicId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Epics" },
+    
     title: { type: String, required: true, trim: true, minlength: 1, maxlength: 240 },
     description: { type: String, default: "", maxlength: 4000 }, // ✅ CHANGED: not required
     status: {
       type: String,
-      enum: ["todo", "in-progress", "blocked", "waiting-review", "done"],
+      enum: ["todo", "in-progress", "blocked", "waiting-review", "done","backlog"],
+      default: "backlog",
       required: true,
       default: "todo",
     },
@@ -32,7 +37,6 @@ const taskSchema = new mongoose.Schema(
     assigneeUserId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "User" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "User" },
     projectId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Project" },
-    milestoneId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Milestone" },
     dependency: { type: [mongoose.Schema.Types.ObjectId], default: [] },
     dueDate: { type: Date, default: null },
     comments: { type: [commentSchema], default: [] },
@@ -56,6 +60,7 @@ const taskSchema = new mongoose.Schema(
   }
 );
 
+// Indexes
 taskSchema.index({ workspaceId: 1, status: 1, dueDate: 1 });
 taskSchema.index({ workspaceId: 1, assigneeUserId: 1, status: 1 });
 taskSchema.index({ workspaceId: 1, projectId: 1, milestoneId: 1 });

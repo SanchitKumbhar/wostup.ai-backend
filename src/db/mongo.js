@@ -4,6 +4,8 @@ async function connectToMongo() {
   const mongoUri = process.env.MONGO_URI;
   const dbName = process.env.DB_NAME || "startup_navigator";
 
+  console.log(mongoUri)
+
   if (!mongoUri) {
     throw new Error("MONGO_URI is not set");
   }

@@ -6,7 +6,6 @@ function safeRequire(path, exportName) {
       console.warn(`Optional model missing: ${exportName}`);
       return null;
     }
-
     throw error;
   }
 }
@@ -15,11 +14,11 @@ module.exports = {
   User: require("./usersProfile.model"),
   UserProfile: require("./usersProfile.model"),
   AuthOtp: require("./authOtp.model"),
-  
-
   Workspace: require("./workspaces.model"),
   WorkspaceMember: require("./workspaceMembers.model"),
   Project: require("./projects.model"),
+  Epic: safeRequire("./epics.model", "Epic"),
+  Sprint: safeRequire("./sprints.model", "Sprint"),
   Milestone: require("./milestones.model"),
   Task: require("./tasks.model"),
   Update: require("./updates.model"),
@@ -31,7 +30,6 @@ module.exports = {
   AiContextSnapshot: safeRequire("./ai_context_snapshots.model", "AiContextSnapshot"),
   AiExecutionLog: safeRequire("./ai_execution_logs.model", "AiExecutionLog"),
   AiRiskReport: safeRequire("./ai_risk_reports.model", "AiRiskReport"),
-
   AuthAccount: require("./authAccounts.model"),
   AuthSession: require("./authSessions.model"),
   AuthRefreshToken: require("./authRefreshTokens.model"),
@@ -41,4 +39,3 @@ module.exports = {
   FailedQueueJob: require("./failedQueueJobs.model"),
   Suggestion: require("./suggestions.model"),
 };
-
