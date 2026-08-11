@@ -153,12 +153,10 @@ const validators = {
       required: [
         "workspaceId",
         "title",
-        "description",
         "status",
         "assigneeUserId",
         "projectId",
-        "dueDate",
-        "comments",
+        "createdBy",
         "createdAt",
         "updatedAt",
       ],
@@ -168,12 +166,19 @@ const validators = {
         title: { bsonType: "string", minLength: 1, maxLength: 240 },
         description: { bsonType: "string", maxLength: 4000 },
         status: { enum: ["todo", "in-progress", "blocked", "waiting-review", "done"] },
+        statusEnteredAt: { bsonType: "date" },
+        priority: { enum: ["Low", "Medium", "High", "Critical"] },
+        estimatedEffort: { bsonType: ["int", "double", "null"], minimum: 0 },
+        actualProgress: { bsonType: ["int", "double"], minimum: 0, maximum: 100 },
         assigneeUserId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
         projectId: { bsonType: "objectId" },
         milestoneId: { bsonType: ["objectId", "null"] },
-        dueDate: { bsonType: "date" },
-        // NEW: track when the current status was entered
-        statusEnteredAt: { bsonType: "date" },
+        dependency: { 
+          bsonType: "array", 
+          items: { bsonType: "objectId" }
+        },
+        dueDate: { bsonType: ["date", "null"] },
         comments: {
           bsonType: "array",
           items: {
@@ -186,8 +191,22 @@ const validators = {
               content: { bsonType: "string", minLength: 1, maxLength: 4000 },
               timestamp: { bsonType: "date" },
             },
-          },
+          }
         },
+        sender: { bsonType: ["string", "null"] },
+        emailId: { bsonType: ["string", "null"] },
+        threadId: { bsonType: ["string", "null"] },
+        attachments: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            properties: {
+              filename: { bsonType: "string" },
+              url: { bsonType: "string" },
+            },
+          }
+        },
+        emailUrl: { bsonType: ["string", "null"] },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
         deletedAt: { bsonType: ["date", "null"] },
@@ -431,7 +450,6 @@ const validators = {
       properties: {
         _id: { bsonType: "objectId" },
         workspaceId: { bsonType: "objectId" },
-        // NEW: projectId (optional) for stuck task alerts
         projectId: { bsonType: "objectId" },
         risk_category: {
           enum: [
@@ -439,8 +457,8 @@ const validators = {
             "Dependency Conflict",
             "Milestone Mismatch",
             "Due-Date Clustering",
-            "Stuck Task",     // NEW
-            "Overload",       // NEW
+            "Stuck Task",
+            "Overload",
           ],
         },
         risk_score: { bsonType: ["int", "double"] },
@@ -453,13 +471,11 @@ const validators = {
             id: { bsonType: "objectId" },
           },
         },
-        // NEW: message field (optional)
         message: { bsonType: "string" },
         details: { bsonType: ["object", "null"] },
         phrased_text: { bsonType: ["string", "null"] },
         validated: { bsonType: "bool" },
         model_version: { bsonType: "string" },
-        // NEW: status lifecycle
         status: { enum: ["active", "resolved", "dismissed"] },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
@@ -476,7 +492,7 @@ const indexes = {
   ],
   projects: [
     { key: { workspaceId: 1, status: 1, updatedAt: -1 } },
-    { key: { workspaceId: 1, ownerUserId: 1 } },
+    { key: { workspaceId: 1, owner: 1 } },
   ],
   milestones: [{ key: { workspaceId: 1, projectId: 1, dueDate: 1 } }],
   tasks: [

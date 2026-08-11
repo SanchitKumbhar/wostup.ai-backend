@@ -2,7 +2,7 @@ const mongoose = require("mongoose");
 
 const workspaceMemberSchema = new mongoose.Schema(
   {
-    workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    workspaceId: { type: mongoose.Schema.Types.ObjectId,ref: 'Workspace',  required: true },
     userId: { type: mongoose.Schema.Types.ObjectId, required: true },
     role: { type: String, enum: ["owner", "admin", "member", "viewer"], required: true },
     assignedTasks: [

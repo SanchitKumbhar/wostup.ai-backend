@@ -21,21 +21,21 @@ async function authMiddleware(req, res, next) {
     }
 
     // Validate session if session ID is embedded in token
-    if (payload.sid) {
-      const session = await AuthSession.findOne({
-        _id: payload.sid,
-        userId: user._id,
-        revokedAt: null,
-        expiresAt: { $gt: new Date() },
-      });
-      if (!session) {
-        return res.status(401).json({ error: "Session invalid or revoked" });
-      }
+    // if (payload.sid) {
+    //   const session = await AuthSession.findOne({
+    //     _id: payload.sid,
+    //     userId: user._id,
+    //     revokedAt: null,
+    //     expiresAt: { $gt: new Date() },
+    //   });
+    //   if (!session) {
+    //     return res.status(401).json({ error: "Session invalid or revoked" });
+    //   }
 
-      // Update last activity timestamp (asynchronously, don't await to avoid blocking)
-      session.lastActiveAt = new Date();
-      session.save().catch(err => console.error("Failed to update lastActiveAt:", err));
-    }
+    //   // Update last activity timestamp (asynchronously, don't await to avoid blocking)
+    //   session.lastActiveAt = new Date();
+    //   session.save().catch(err => console.error("Failed to update lastActiveAt:", err));
+    // }
 
     req.user = user;
     req.auth = { userId: user.id, email: user.email, sessionId: payload.sid || null };

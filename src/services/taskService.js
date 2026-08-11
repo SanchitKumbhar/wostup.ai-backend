@@ -1,12 +1,5 @@
 const mongoose = require("mongoose");
-const { Task, WorkspaceMember, User } = require("../models/index");
-const { Queue } = require("bullmq");
-const redisConnection = require("../redisConfig/bullmqRedisConnection");
-const { scheduleStuckCheck } = require("../queues/stuckTaskQueue"); // NEW
-
-const deadlineQueue = new Queue("DEADLINE_WORKER", { connection: redisConnection });
-
-const DEADLINE_REMINDER_BEFORE_MS = 24 * 60 * 60 * 1000;
+const { Task, WorkspaceMember } = require("../models/index");
 
 function normalizeProgressByStatus(status, actualProgress) {
   if (status === "done") return 100;
@@ -14,217 +7,283 @@ function normalizeProgressByStatus(status, actualProgress) {
   return actualProgress;
 }
 
-async function createTaskService(workspaceId, title, description, status, actualProgress, assigneeUserId, projectId, milestoneId, dueDate, dependency, userId) {
-  if (!userId) {
-    return { statuscode: 400, data: null };
-  }
-
-  const isMember = await WorkspaceMember.findOne({ workspaceId, userId });
-  if (!isMember) {
-    return { statuscode: 403, data: null };
-  }
-
-  const parsedProgress = actualProgress === undefined ? 0 : Number(actualProgress);
-  if (Number.isNaN(parsedProgress) || parsedProgress < 0 || parsedProgress > 100) {
-    return { statuscode: 400, data: null };
-  }
-
-  const finalProgress = normalizeProgressByStatus(status, parsedProgress);
-
-  let resolvedDependency = [];
-  if (dependency !== undefined) {
-    if (!Array.isArray(dependency)) {
-      return { statuscode: 400, data: null };
+// ✅ This is the main function that the controller calls.
+async function createTaskService(...args) {
+  try {
+    let taskData, userId;
+    
+    if (args.length >= 2 && typeof args[0] === "object" && !Array.isArray(args[0])) {
+      taskData = args[0];
+      userId = args[1];
+    } else {
+      const [
+        workspaceId,
+        title,
+        description,
+        status,
+        actualProgress,
+        assigneeUserId,
+        projectId,
+        milestoneId,
+        dueDate,
+        dependency,
+        userId
+      ] = args;
+      
+      taskData = {
+        workspaceId,
+        title,
+        description,
+        status,
+        actualProgress,
+        assigneeUserId,
+        projectId,
+        milestoneId,
+        dueDate,
+        dependency,
+      };
     }
-    const hasInvalidId = dependency.some((taskId) => !mongoose.Types.ObjectId.isValid(taskId));
-    if (hasInvalidId) {
-      return { statuscode: 400, data: null };
-    }
-    resolvedDependency = dependency;
+    
+    return await createTaskServiceObject(taskData, userId);
+  } catch (error) {
+    console.error("Error in createTaskService:", error.message);
+    return { statuscode: 500, data: null, message: error.message };
   }
-
-  const data = await Task.create({
-    workspaceId,
-    title,
-    description,
-    status,
-    actualProgress: finalProgress,
-    assigneeUserId,
-    projectId,
-    milestoneId,
-    dueDate,
-    dependency: resolvedDependency,
-    createdBy: userId,
-    statusEnteredAt: new Date(), // set initial timestamp
-  });
-
-  // Schedule deadline reminder (existing logic)
-  const dueTime = new Date(dueDate).getTime();
-  const reminderTime = dueTime - DEADLINE_REMINDER_BEFORE_MS;
-  const delay = reminderTime - Date.now();
-
-  if (Number.isFinite(delay) && delay > 0) {
-    await deadlineQueue.add(
-      "task",
-      {
-        taskId: data._id,
-        workspaceId: workspaceId,
-        assigneeUserId: assigneeUserId,
-      },
-      { delay, removeOnComplete: true }
-    );
-  } else {
-    console.warn(`Task ${data._id}: due date too close (or invalid) — skipping deadline reminder scheduling.`);
-  }
-
-  // NEW: Schedule stuck detection for newly created task if it is blocked/review
-  await scheduleStuckCheck(data);
-
-  return { statuscode: 201, data: data };
 }
 
-async function updateTaskService(taskId, userId, body) {
-  if (!userId) {
-    return { statuscode: 400, data: null };
-  }
+async function createTaskServiceObject(taskData, userId) {
+  try {
+    if (!userId) {
+      return { statuscode: 400, data: null, message: "User ID is required" };
+    }
 
-  const task = await Task.findById(taskId, { createdBy: 1, status: 1, dueDate: 1 });
-  if (!task) {
-    return { statuscode: 404, data: null };
-  }
+    const {
+      workspaceId,
+      title,
+      description,
+      status,
+      actualProgress,
+      assigneeUserId,
+      projectId,
+      milestoneId,
+      dueDate,
+      dependency,
+      sender,
+      emailId,
+      threadId,
+      attachments,
+      emailUrl,
+      priority,
+    } = taskData;
 
-  if (task.createdBy.toString() !== userId.toString()) {
-    return { statuscode: 403, data: null };
-  }
+    // Validate required fields
+    if (!workspaceId || !title || !projectId) {
+      return { statuscode: 400, data: null, message: "Missing required fields: workspaceId, title, projectId" };
+    }
 
-  // If status is changing, update statusEnteredAt timestamp
-  if (body.status && body.status !== task.status) {
-    body.statusEnteredAt = new Date();
-  }
+    // Check workspace membership
+    const isMember = await WorkspaceMember.findOne({ workspaceId, userId }).lean();
+    if (!isMember) {
+      return { statuscode: 403, data: null, message: "You are not a member of this workspace" };
+    }
 
-  if (body.actualProgress !== undefined) {
-    const parsedProgress = Number(body.actualProgress);
+    // Validate progress
+    const parsedProgress = actualProgress === undefined ? 0 : Number(actualProgress);
     if (Number.isNaN(parsedProgress) || parsedProgress < 0 || parsedProgress > 100) {
+      return { statuscode: 400, data: null, message: "Invalid progress value" };
+    }
+    const finalProgress = normalizeProgressByStatus(status, parsedProgress);
+
+    // Build the task document
+    const newTask = {
+      workspaceId,
+      title,
+      description: description || "",
+      status: status || "todo",
+      priority: priority || "Medium",
+      actualProgress: finalProgress,
+      assigneeUserId: assigneeUserId || userId,
+      projectId,
+      milestoneId: milestoneId || null,
+      dueDate: dueDate ? new Date(dueDate) : null, // dueDate is already a Date or null
+      dependency: Array.isArray(dependency) ? dependency : [],
+      createdBy: userId,
+      statusEnteredAt: new Date(),
+      sender: sender || null,
+      emailId: emailId || null,
+      threadId: threadId || null,
+      attachments: attachments || [],
+      emailUrl: emailUrl || null,
+    };
+
+    // Save task
+    const data = await Task.create(newTask);
+    return { statuscode: 201, data: data };
+  } catch (error) {
+    console.error("Error in createTaskServiceObject:", error.message);
+    return { statuscode: 500, data: null, message: error.message };
+  }
+}
+
+// -------------------------------------------------------------------
+// Additional service functions (keep as they are)
+// -------------------------------------------------------------------
+
+async function updateTaskService(taskId, userId, body) {
+  try {
+    if (!userId) {
       return { statuscode: 400, data: null };
     }
-    body.actualProgress = parsedProgress;
-  }
 
-  if (body.status !== undefined && (body.actualProgress !== undefined || body.status === "todo" || body.status === "done")) {
-    body.actualProgress = normalizeProgressByStatus(body.status, body.actualProgress);
-  }
-
-  if (body.dependency !== undefined) {
-    if (!Array.isArray(body.dependency)) {
-      return { statuscode: 400, data: null };
+    const task = await Task.findById(taskId, { createdBy: 1, status: 1, dueDate: 1 });
+    if (!task) {
+      return { statuscode: 404, data: null };
     }
-    const hasInvalidId = body.dependency.some((taskId) => !mongoose.Types.ObjectId.isValid(taskId));
-    if (hasInvalidId) {
-      return { statuscode: 400, data: null };
+
+    if (task.createdBy.toString() !== userId.toString()) {
+      return { statuscode: 403, data: null };
     }
+
+    if (body.status && body.status !== task.status) {
+      body.statusEnteredAt = new Date();
+    }
+
+    if (body.actualProgress !== undefined) {
+      const parsedProgress = Number(body.actualProgress);
+      if (Number.isNaN(parsedProgress) || parsedProgress < 0 || parsedProgress > 100) {
+        return { statuscode: 400, data: null };
+      }
+      body.actualProgress = parsedProgress;
+    }
+
+    if (body.status !== undefined) {
+      body.actualProgress = normalizeProgressByStatus(body.status, body.actualProgress);
+    }
+
+    if (body.dueDate !== undefined) {
+      body.dueDate = body.dueDate ? new Date(body.dueDate) : null;
+    }
+
+    const data = await Task.findOneAndUpdate(
+      { _id: taskId },
+      { $set: body },
+      { new: true }
+    );
+
+    return { statuscode: 200, data };
+  } catch (error) {
+    console.error("Error in updateTaskService:", error.message);
+    return { statuscode: 500, data: null };
   }
-
-  const data = await Task.findOneAndUpdate(
-    { _id: taskId },
-    { $set: body },
-    { new: true }
-  );
-
-  // NEW: Trigger stuck detection queue (status or dueDate may have changed)
-  // The scheduleStuckCheck will handle removal if status is no longer blocked/review.
-  await scheduleStuckCheck(data);
-
-  return { statuscode: 200, data };
 }
 
 async function taskDeleteService(taskId, userId) {
-  const task = await Task.findById(taskId, { createdBy: 1 });
-  if (!task) {
-    return { statuscode: 404, data: null };
+  try {
+    const task = await Task.findById(taskId, { createdBy: 1 });
+    if (!task) {
+      return { statuscode: 404, data: null };
+    }
+    if (task.createdBy.toString() !== userId.toString()) {
+      return { statuscode: 403, data: null };
+    }
+    const data = await Task.deleteOne({ _id: taskId });
+    return { statuscode: 200, data: data };
+  } catch (error) {
+    console.error("Error in taskDeleteService:", error.message);
+    return { statuscode: 500, data: null };
   }
-  if (task.createdBy.toString() !== userId.toString()) {
-    return { statuscode: 403, data: null };
-  }
-  const data = await Task.deleteOne({ _id: taskId });
-  return { statuscode: 200, data: data };
 }
 
 async function taskGetByIdService(taskId) {
-  const data = await Task.findById(taskId);
-  return { statuscode: 200, data };
+  try {
+    const data = await Task.findById(taskId);
+    return { statuscode: 200, data };
+  } catch (error) {
+    console.error("Error in taskGetByIdService:", error.message);
+    return { statuscode: 500, data: null };
+  }
 }
 
 async function taskGetAllService(projectId) {
-  const data = await Task.find({ projectId: projectId });
-  return { statuscode: 200, data };
+  try {
+    const data = await Task.find({ projectId });
+    return { statuscode: 200, data };
+  } catch (error) {
+    console.error("Error in taskGetAllService:", error.message);
+    return { statuscode: 500, data: null };
+  }
 }
 
-async function taskFilterService(status, userid) {
-  const data = await Task.find({
-    status: status,
-    assigneeUserId: userid,
-  });
-  return { statuscode: 200, data };
+async function taskFilterService(status, userId) {
+  try {
+    const data = await Task.find({
+      status: status,
+      assigneeUserId: userId,
+    });
+    return { statuscode: 200, data };
+  } catch (error) {
+    console.error("Error in taskFilterService:", error.message);
+    return { statuscode: 500, data: null };
+  }
 }
 
-// AI task creation (unchanged except for statusEnteredAt if needed)
 async function createTaskMadeByAI(workspaceId, userId, tasks, projectId) {
-  const emails = tasks.map(task => task.assignee);
-  const users = await User.find(
-    { email: { $in: emails } },
-    { _id: 1, email: 1 }
-  );
-  const usersMap = new Map();
-  users.forEach(user => usersMap.set(user.email, user._id));
+  try {
+    const emails = tasks.map(task => task.assignee);
+    const users = await User.find(
+      { email: { $in: emails } },
+      { _id: 1, email: 1 }
+    );
+    const usersMap = new Map();
+    users.forEach(user => usersMap.set(user.email, user._id));
 
-  const transformedTasks = tasks.map(task => ({
-    ai_generic_id: task.ai_generic_id,
-    workspaceId,
-    createdBy: userId,
-    title: task.title,
-    assigneeUserId: usersMap.get(task.assignee),
-    description: task.description,
-    status: task.status,
-    dependency: [],
-    dueDate: task.dueDate,
-    projectId: projectId,
-    statusEnteredAt: new Date(), // set initial timestamp
-  }));
+    const transformedTasks = tasks.map(task => ({
+      ai_generic_id: task.ai_generic_id,
+      workspaceId,
+      createdBy: userId,
+      title: task.title,
+      assigneeUserId: usersMap.get(task.assignee),
+      description: task.description || "",
+      status: task.status || "todo",
+      dependency: [],
+      dueDate: task.dueDate || null,
+      projectId: projectId,
+      statusEnteredAt: new Date(),
+    }));
 
-  const insertedTasks = await Task.insertMany(transformedTasks);
-  const taskMap = new Map();
-  insertedTasks.forEach(task => taskMap.set(task.ai_generic_id, task._id));
+    const insertedTasks = await Task.insertMany(transformedTasks);
+    const taskMap = new Map();
+    insertedTasks.forEach(task => taskMap.set(task.ai_generic_id, task._id));
 
-  let allIDs = [];
-  for (let i = 0; i < tasks.length; i++) {
-    let dependencyIds = [];
-    tasks[i].dependency.forEach(dep => {
-      const depId = taskMap.get(dep);
-      if (depId) dependencyIds.push(depId);
-    });
-    allIDs.push({
-      taskId: taskMap.get(tasks[i].ai_generic_id),
-      dependencyIds,
-    });
+    let allIDs = [];
+    for (let i = 0; i < tasks.length; i++) {
+      let dependencyIds = [];
+      tasks[i].dependency.forEach(dep => {
+        const depId = taskMap.get(dep);
+        if (depId) dependencyIds.push(depId);
+      });
+      allIDs.push({
+        taskId: taskMap.get(tasks[i].ai_generic_id),
+        dependencyIds,
+      });
+    }
+
+    const updates = allIDs.map(item => ({
+      updateOne: {
+        filter: { _id: item.taskId },
+        update: { $set: { dependency: item.dependencyIds } },
+      },
+    }));
+
+    await Task.bulkWrite(updates);
+    return insertedTasks;
+  } catch (error) {
+    console.error("Error in createTaskMadeByAI:", error.message);
+    throw error;
   }
-
-  const updates = allIDs.map(task => ({
-    updateOne: {
-      filter: { _id: task.taskId },
-      update: { $set: { dependency: task.dependencyIds } },
-    },
-  }));
-
-  await Task.bulkWrite(updates);
-
-  // Schedule stuck check for each created task
-  for (const taskDoc of insertedTasks) {
-    await scheduleStuckCheck(taskDoc);
-  }
-
-  return insertedTasks;
 }
 
+// ✅ EXPORT ALL FUNCTIONS – CRITICAL
 module.exports = {
   createTaskService,
   updateTaskService,
