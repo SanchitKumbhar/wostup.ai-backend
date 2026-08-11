@@ -7,7 +7,7 @@ const {
     getSprintByIdController,
     getAllSprintsController,
     deleteSprintController,
-} = require("../controllers/projectsController/sprint.Controller");
+} = require("../controllers/projectsController/sprint.controller");
 
 // Create sprint
 router.post("/v1/createSprint", authMiddleware, createSprintController);
