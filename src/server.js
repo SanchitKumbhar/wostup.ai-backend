@@ -1,5 +1,7 @@
 const path = require("path");
-require("dotenv").config(); // Ensures path resolution
+require("dotenv").config({ path: path.resolve(__dirname, "./.env") });
+require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+require("dotenv").config();
 const { app, server, io } = require("./app"); // ✅ FIXED IMPORT
 const { connectToMongo } = require("./db/mongo");
 const { ensureMongoSchema } = require("./db/schemaSetup");
@@ -31,6 +33,7 @@ async function startServer() {
     require("./workers/dealdine.worker.js");
     require("./workers/emailVerification.worker");
     require("./workers/stuckTask.worker.js");
+    require("./workers/githubWebhook.worker.js");
     // ✅ START ONLY ONE SERVER
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);

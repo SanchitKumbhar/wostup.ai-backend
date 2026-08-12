@@ -534,6 +534,80 @@ const validators = {
       },
     },
   },
+  github_installations: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "installationId", "accountLogin", "installedByUserId", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        installationId: { bsonType: ["int", "long", "double"] },
+        accountLogin: { bsonType: "string" },
+        accountType: { enum: ["User", "Organization"] },
+        installedByUserId: { bsonType: "objectId" },
+        status: { enum: ["active", "removed"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  github_repos: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["installationId", "githubRepoId", "fullName", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        installationId: { bsonType: ["int", "long", "double"] },
+        githubRepoId: { bsonType: ["int", "long", "double"] },
+        fullName: { bsonType: "string" },
+        private: { bsonType: "bool" },
+        defaultBranch: { bsonType: "string" },
+        projectId: { bsonType: ["objectId", "null"] },
+        attachedByUserId: { bsonType: ["objectId", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  github_pull_requests: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["repoId", "githubPrId", "number", "title", "state", "authorLogin", "createdAtGh", "updatedAtGh"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        repoId: { bsonType: "objectId" },
+        githubPrId: { bsonType: ["int", "long", "double"] },
+        number: { bsonType: ["int", "long", "double"] },
+        title: { bsonType: "string" },
+        state: { bsonType: "string" },
+        merged: { bsonType: "bool" },
+        mergedAt: { bsonType: ["date", "null"] },
+        authorLogin: { bsonType: "string" },
+        createdAtGh: { bsonType: "date" },
+        updatedAtGh: { bsonType: "date" },
+        rawPayload: { bsonType: "object" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  github_commits: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["repoId", "sha", "message", "committedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        repoId: { bsonType: "objectId" },
+        sha: { bsonType: "string" },
+        message: { bsonType: "string" },
+        authorLogin: { bsonType: "string" },
+        committedAt: { bsonType: "date" },
+        rawPayload: { bsonType: "object" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
 };
 
 const indexes = {
@@ -598,6 +672,21 @@ const indexes = {
   sprints: [
     { key: { workspaceId: 1, projectId: 1, status: 1 } },
     { key: { projectId: 1, startDate: 1, endDate: 1 } },
+  ],
+  github_installations: [
+    { key: { installationId: 1 }, options: { unique: true } },
+    { key: { workspaceId: 1, status: 1 } },
+  ],
+  github_repos: [
+    { key: { githubRepoId: 1 }, options: { unique: true } },
+    { key: { installationId: 1, projectId: 1 } },
+  ],
+  github_pull_requests: [
+    { key: { repoId: 1, githubPrId: 1 }, options: { unique: true } },
+    { key: { repoId: 1, updatedAtGh: -1, _id: -1 } },
+  ],
+  github_commits: [
+    { key: { repoId: 1, sha: 1 }, options: { unique: true } },
   ],
 };
 

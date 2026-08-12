@@ -1,15 +1,11 @@
 require('dotenv').config();
 
 const { Worker } = require('bullmq');
-const redisConnection = require('../redisConfig/bullmqRedisConnection');
-const IORedis = require('ioredis');
+const redisConnection = require("../redisConfig/bullmqRedisConnection");
 const { User } = require('../models');
 
-const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
-const redisOpts = { maxRetriesPerRequest: null };
 const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:5173';
-
-const pubClient = new IORedis(redisUrl, redisOpts);
+const pubClient = redisConnection;
 
 const brevo = require('@getbrevo/brevo');
 

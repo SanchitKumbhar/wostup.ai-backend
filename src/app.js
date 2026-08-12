@@ -21,8 +21,15 @@ const addonRoutes = require("./routes/addonRoutes");
 
 const epicRoutes = require("./routes/epicRoutes");
 const sprintRoutes = require("./routes/sprintRoutes");
+const githubRoutes = require("./routes/github.routes");
+const githubWebhookRoutes = require("./routes/githubWebhook.routes");
+
 const app = express();
 app.use(cors());
+
+// Mount raw webhook route BEFORE express.json() to preserve raw body Buffer for HMAC verification
+app.use("/webhooks/github", githubWebhookRoutes);
+
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -44,7 +51,7 @@ app.use("/api/team-load", teamLoadRoutes);
 app.use("/api/sessions", sessionsRoutes); // ✅ use the variable
 app.use("/api/conflicts", conflictDetectorRoutes);
 app.use("/api/addon", addonRoutes);
-
+app.use("/api/github", githubRoutes);
 
 app.use("/api/epics", epicRoutes);
 app.use("/api/sprints", sprintRoutes);
