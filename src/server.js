@@ -1,7 +1,9 @@
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "./.env") });
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
-require("dotenv").config();
+const fs = require("fs");
+const envPath = fs.existsSync(path.resolve(__dirname, "./.env"))
+  ? path.resolve(__dirname, "./.env")
+  : path.resolve(__dirname, "../.env");
+require("dotenv").config({ path: envPath });
 const { app, server, io } = require("./app"); // ✅ FIXED IMPORT
 const { connectToMongo } = require("./db/mongo");
 const { ensureMongoSchema } = require("./db/schemaSetup");

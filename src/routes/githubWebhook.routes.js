@@ -3,13 +3,13 @@ const crypto = require("crypto");
 const router = express.Router();
 const { enqueueGithubWebhook } = require("../queues/githubWebhook.queue");
 
-const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "wostup_github_webhook_secret_key";
+const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
 
 /**
  * Helper to verify GitHub Webhook HMAC SHA-256 Signature.
  */
 function verifyGithubSignature(rawBody, signatureHeader) {
-  if (!signatureHeader || !signatureHeader.startsWith("sha256=")) {
+  if (!signatureHeader || !signatureHeader.startsWith("sha256=") || !GITHUB_WEBHOOK_SECRET) {
     return false;
   }
   const signature = signatureHeader.replace("sha256=", "");
@@ -26,6 +26,11 @@ function verifyGithubSignature(rawBody, signatureHeader) {
 // Raw body parser route for webhook HMAC verification
 router.post("/", express.raw({ type: "application/json" }), async (req, res) => {
   try {
+    if (!GITHUB_WEBHOOK_SECRET) {
+      console.error("⚠️ GITHUB_WEBHOOK_SECRET is not configured on server");
+      return res.status(500).json({ error: "Server webhook configuration error" });
+    }
+
     const signature = req.headers["x-hub-signature-256"];
     const deliveryId = req.headers["x-github-delivery"];
     const eventType = req.headers["x-github-event"];

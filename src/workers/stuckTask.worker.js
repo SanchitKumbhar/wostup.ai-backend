@@ -1,5 +1,6 @@
 const { Worker } = require("bullmq");
 const { Task, Suggestion, Project } = require("../models");
+const aiNotificationQueue = require("../queues/aiNotificationQueue");
 const redisConnection = require("../redisConfig/bullmqRedisConnection");
 
 const stuckTaskWorker = new Worker(

@@ -19,8 +19,13 @@ const {
   GithubCommit,
 } = require("../models");
 
-const JWT_SECRET = process.env.JWT_SECRET || "gfg_jwt_secret_key";
-const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET || "wostup_github_webhook_secret_key";
+const JWT_SECRET = process.env.JWT_SECRET;
+const GITHUB_WEBHOOK_SECRET = process.env.GITHUB_WEBHOOK_SECRET;
+
+if (!JWT_SECRET || !GITHUB_WEBHOOK_SECRET) {
+  console.error("❌ JWT_SECRET and GITHUB_WEBHOOK_SECRET must be set in environment to run this integration test script.");
+  process.exit(1);
+}
 
 function assertEqual(actual, expected, message) {
   if (actual !== expected) {

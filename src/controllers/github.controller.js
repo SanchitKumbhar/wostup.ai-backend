@@ -9,7 +9,11 @@ const {
 } = require("../models");
 const { getInstallationOctokit } = require("../services/githubApp.service");
 
-const JWT_SECRET = process.env.JWT_SECRET || "gfg_jwt_secret_key";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  console.warn("⚠️ Warning: JWT_SECRET environment variable is missing for GitHub App state signing.");
+}
+
 const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG || "wostup-ai";
 
 /**
@@ -25,13 +29,17 @@ async function getConnectUrl(req, res) {
       return res.status(400).json({ error: "Invalid workspaceId format" });
     }
 
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Server configuration error: JWT_SECRET is not set." });
+    }
+
     const stateToken = jwt.sign(
       {
         workspaceId,
         userId,
         purpose: "github_setup",
       },
-      JWT_SECRET,
+      process.env.JWT_SECRET,
       { expiresIn: "15m" }
     );
 
@@ -63,9 +71,13 @@ async function handleSetupCallback(req, res) {
       return res.status(400).json({ error: "Missing installation_id or state query parameter" });
     }
 
+    if (!process.env.JWT_SECRET) {
+      return res.status(500).json({ error: "Server configuration error: JWT_SECRET is not set." });
+    }
+
     let payload;
     try {
-      payload = jwt.verify(state, JWT_SECRET);
+      payload = jwt.verify(state, process.env.JWT_SECRET);
     } catch (_err) {
       return res.status(400).json({ error: "Invalid or expired state token" });
     }
@@ -191,7 +203,7 @@ async function getUnattachedRepos(req, res) {
 
 /**
  * POST /api/github/projects/:projectId/attach-repo
- * Locks a repository to a project by setting projectId and attachedByUserId.
+ * Locks a repository to a project atomically and idempotently.
  */
 async function attachRepoToProject(req, res) {
   try {
@@ -230,21 +242,42 @@ async function attachRepoToProject(req, res) {
       });
     }
 
-    // Lock check: If already attached to another project
-    if (repo.projectId && repo.projectId.toString() !== projectId.toString()) {
+    // Idempotent check: If already attached to THIS project, return success without changing attachedByUserId
+    if (repo.projectId && repo.projectId.toString() === projectId.toString()) {
+      return res.status(200).json({
+        success: true,
+        message: "Repository is already attached to this project",
+        repo,
+      });
+    }
+
+    // Atomic update: Only succeeds if repo is currently unattached (projectId: null)
+    const updatedRepo = await GithubRepo.findOneAndUpdate(
+      {
+        githubRepoId: numGithubRepoId,
+        installationId: repo.installationId,
+        projectId: null,
+      },
+      {
+        $set: {
+          projectId: new mongoose.Types.ObjectId(projectId),
+          attachedByUserId: new mongoose.Types.ObjectId(currentUserId),
+          updatedAt: new Date(),
+        },
+      },
+      { returnDocument: "after", runValidators: true }
+    );
+
+    if (!updatedRepo) {
       return res.status(400).json({
         error: "Repository is already attached to another project and locked.",
       });
     }
 
-    repo.projectId = new mongoose.Types.ObjectId(projectId);
-    repo.attachedByUserId = new mongoose.Types.ObjectId(currentUserId);
-    await repo.save();
-
     return res.status(200).json({
       success: true,
       message: "Repository attached and locked to project successfully",
-      repo,
+      repo: updatedRepo,
     });
   } catch (error) {
     console.error("Error attaching repository to project:", error);
@@ -255,7 +288,7 @@ async function attachRepoToProject(req, res) {
 /**
  * POST /api/github/projects/:projectId/detach-repo
  * Detaches a repository from a project.
- * STRICT RBAC: Only a Workspace Admin (Owner/Admin) OR the exact Team Leader who attached the repo can detach it.
+ * STRICT RBAC: Only a Workspace Admin (Owner/Admin) OR the user who attached the repo can detach it.
  */
 async function detachRepoFromProject(req, res) {
   try {
@@ -304,7 +337,7 @@ async function detachRepoFromProject(req, res) {
 
     if (!isWorkspaceAdmin && !isAttacher) {
       return res.status(403).json({
-        error: "Forbidden: Only a Workspace Admin or the Team Leader who attached this repository can detach it.",
+        error: "Forbidden: Only a Workspace Admin or the user who attached this repository can detach it.",
       });
     }
 
