@@ -1,9 +1,8 @@
 // middleware/authMiddleware.js
 const { createClerkClient } = require("@clerk/backend");
-const { extractTokenFromHeader } = require("../utils/jwt");
-const { User } = require("../models");
+const { extractTokenFromHeader } = require("../utils/jwt"); // Assuming helper extracts Bearer token
+const { User } = require("../models"); //
 
-// Initialize Clerk client with your secret key
 const clerkClient = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY,
 });
@@ -17,28 +16,33 @@ async function authMiddleware(req, res, next) {
       return res.status(401).json({ error: "Unauthorized: Missing token" });
     }
 
-    // 1. Verify the Clerk JWT signature against Clerk's public key
-    const requestState = await clerkClient.authenticateRequest(req);
+    // 1. Construct a fully-qualified dummy or host-based URL for ClerkRequest
+    const protocol = req.protocol || "http";
+    const host = req.get("host") || "localhost:5000";
+    const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
+
+    // 2. Pass request options with authorized request state
+    const requestState = await clerkClient.authenticateRequest({
+      ...req,
+      url: fullUrl,
+      headers: req.headers,
+    });
 
     if (!requestState.isSignedIn) {
       return res.status(401).json({ error: "Invalid or expired session token" });
     }
 
-    // 2. Extract Clerk User ID & Auth payload
+    // 3. Extract claims and attach user record from MongoDB
     const authPayload = requestState.toAuth();
     const clerkUserId = authPayload.userId;
 
-    // 3. Find the user record saved in your MongoDB via Webhook
-    // (Queries by email or clerkId)
-    const user = await User.findOne({ 
-      email: authPayload.claims?.email || req.headers["x-user-email"] 
-    });
+    const userEmail = authPayload.claims?.email || req.headers["x-user-email"];
+    const user = await User.findOne({ email: userEmail?.toLowerCase().trim() });
 
     if (!user) {
       return res.status(401).json({ error: "User profile not found in database" });
     }
 
-    // 4. Attach user object to req as you normally do
     req.user = user;
     req.auth = {
       userId: user._id.toString(),
@@ -53,4 +57,4 @@ async function authMiddleware(req, res, next) {
   }
 }
 
-module.exports = {authMiddleware};
+module.exports = { authMiddleware };
