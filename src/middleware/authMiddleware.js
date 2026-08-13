@@ -1,7 +1,7 @@
 // middleware/authMiddleware.js
 const { createClerkClient } = require("@clerk/backend");
 const { extractTokenFromHeader } = require("../utils/jwt");
-const { User } = require("../models");[cite: 2]
+const { User } = require("../models");
 
 const clerkClient = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY,
