@@ -1,3 +1,4 @@
+// db/schemaSetup.js
 const { MongoServerError } = require("mongodb");
 const { getMongoConnection } = require("./mongo");
 
@@ -57,7 +58,9 @@ const validators = {
             maxLength: 80,
           },
         },
+        workingHoursPerDay: { bsonType: ["int", "double", "decimal"], minimum: 0, maximum: 24 },
         twoFactorEnabled: { bsonType: "bool" },
+        emailVerified: { bsonType: "bool" },
         isActive: { bsonType: "bool" },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
@@ -73,6 +76,8 @@ const validators = {
         _id: { bsonType: "objectId" },
         name: { bsonType: "string", minLength: 1, maxLength: 150 },
         ownerUserId: { bsonType: "objectId" },
+        description: { bsonType: "string", maxLength: 500 },
+        settings: { bsonType: "object" },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
       },
@@ -87,6 +92,10 @@ const validators = {
         workspaceId: { bsonType: "objectId" },
         userId: { bsonType: "objectId" },
         role: { enum: ["owner", "admin", "member", "viewer"] },
+        assignedTasks: {
+          bsonType: "array",
+          items: { bsonType: "objectId" },
+        },
         joinedAt: { bsonType: "date" },
       },
     },
@@ -111,6 +120,18 @@ const validators = {
         key: { bsonType: "string", maxLength: 10 },
         owner: { bsonType: "objectId" },
         createdBy: { bsonType: "objectId" },
+        members: {
+          bsonType: "array",
+          items: {
+            bsonType: "object",
+            required: ["userId", "role"],
+            properties: {
+              userId: { bsonType: "objectId" },
+              role: { enum: ["Owner", "Admin", "Manager", "Developer", "Viewer"] },
+              joinedAt: { bsonType: "date" },
+            },
+          },
+        },
         projectType: { enum: ["scrum", "kanban"] },
         color: { bsonType: "string" },
         icon: { bsonType: "string" },
@@ -119,6 +140,18 @@ const validators = {
         visibility: { enum: ["Private", "Workspace"] },
         description: { bsonType: "string", maxLength: 5000 },
         progress: { bsonType: ["int", "double", "decimal"], minimum: 0, maximum: 100 },
+        startDate: { bsonType: ["date", "null"] },
+        dueDate: { bsonType: ["date", "null"] },
+        completedAt: { bsonType: ["date", "null"] },
+        ai: { bsonType: "object" },
+        tags: { bsonType: "array", items: { bsonType: "string" } },
+        techStack: { bsonType: "array", items: { bsonType: "string" } },
+        repository: { bsonType: "object" },
+        settings: { bsonType: "object" },
+        isArchived: { bsonType: "bool" },
+        archivedAt: { bsonType: ["date", "null"] },
+        lastActivityAt: { bsonType: ["date", "null"] },
+        lastUpdatedBy: { bsonType: ["objectId", "null"] },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
         deletedAt: { bsonType: ["date", "null"] },
@@ -171,9 +204,9 @@ const validators = {
         _id: { bsonType: "objectId" },
         workspaceId: { bsonType: "objectId" },
         projectId: { bsonType: "objectId" },
-        milestoneId: { bsonType: ["objectId", "null"] },
         sprintId: { bsonType: ["objectId", "null"] },
         epicId: { bsonType: ["objectId", "null"] },
+        milestoneId: { bsonType: ["objectId", "null"] },
         title: { bsonType: "string", minLength: 1, maxLength: 240 },
         description: { bsonType: "string", maxLength: 4000 },
         status: { enum: ["todo", "in-progress", "blocked", "waiting-review", "done", "backlog"] },
@@ -216,6 +249,49 @@ const validators = {
           },
         },
         emailUrl: { bsonType: ["string", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+        deletedAt: { bsonType: ["date", "null"] },
+      },
+    },
+  },
+  epics: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "projectId", "createdBy", "name", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
+        name: { bsonType: "string", minLength: 1, maxLength: 180 },
+        summary: { bsonType: "string", maxLength: 500 },
+        description: { bsonType: "string", maxLength: 4000 },
+        color: { bsonType: "string" },
+        status: { enum: ["To Do", "In Progress", "Done"] },
+        startDate: { bsonType: ["date", "null"] },
+        dueDate: { bsonType: ["date", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+        deletedAt: { bsonType: ["date", "null"] },
+      },
+    },
+  },
+  sprints: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "projectId", "createdBy", "name", "startDate", "endDate", "status", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
+        name: { bsonType: "string", minLength: 1, maxLength: 120 },
+        goal: { bsonType: "string", maxLength: 2000 },
+        status: { enum: ["future", "active", "completed"] },
+        startDate: { bsonType: "date" },
+        endDate: { bsonType: "date" },
+        completedAt: { bsonType: ["date", "null"] },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
         deletedAt: { bsonType: ["date", "null"] },
@@ -269,29 +345,76 @@ const validators = {
       },
     },
   },
-  startup_progress: {
+  suggestions: {
     $jsonSchema: {
       bsonType: "object",
-      required: ["workspaceId", "stage", "weeklyFocus", "metrics", "createdAt", "updatedAt"],
+      required: ["workspaceId", "risk_category", "risk_score", "confidence", "scope"],
       properties: {
         _id: { bsonType: "objectId" },
         workspaceId: { bsonType: "objectId" },
-        stage: { enum: ["idea", "mvp", "traction", "growth", "scale"] },
-        weeklyFocus: { bsonType: "string", maxLength: 2000 },
-        metrics: {
-          bsonType: "array",
-          items: {
-            bsonType: "object",
-            required: ["metricKey", "name", "current", "target", "unit"],
-            properties: {
-              metricKey: { bsonType: "string", minLength: 1, maxLength: 64 },
-              name: { bsonType: "string", minLength: 1, maxLength: 120 },
-              current: { bsonType: ["int", "long", "double", "decimal"] },
-              target: { bsonType: ["int", "long", "double", "decimal"] },
-              unit: { bsonType: "string", maxLength: 12 },
-            },
+        projectId: { bsonType: "objectId" },
+        risk_category: {
+          enum: [
+            "Cross-Project Conflict",
+            "Dependency Conflict",
+            "Milestone Mismatch",
+            "Due-Date Clustering",
+            "Stuck Task",
+            "Overload",
+          ],
+        },
+        risk_score: { bsonType: ["int", "double"] },
+        confidence: { bsonType: ["int", "double"] },
+        scope: {
+          bsonType: "object",
+          required: ["type", "id"],
+          properties: {
+            type: { enum: ["person", "task", "project"] },
+            id: { bsonType: "objectId" },
           },
         },
+        message: { bsonType: "string" },
+        details: { bsonType: ["object", "null"] },
+        phrased_text: { bsonType: ["string", "null"] },
+        validated: { bsonType: "bool" },
+        model_version: { bsonType: "string" },
+        status: { enum: ["active", "resolved", "dismissed"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  overload_scores: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "userId", "date", "raw_load", "capacity", "load_score", "risk_level", "computed_at"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        userId: { bsonType: "objectId" },
+        date: { bsonType: "string" },
+        raw_load: { bsonType: ["int", "double"] },
+        capacity: { bsonType: ["int", "double"] },
+        working_hours_per_day: { bsonType: ["int", "double", "null"] },
+        remaining_working_days: { bsonType: ["int", "double", "null"] },
+        load_score: { bsonType: ["int", "double"] },
+        risk_level: { enum: ["low", "moderate", "high", "critical"] },
+        contributing_tasks: { bsonType: "array" },
+        computed_at: { bsonType: "date" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  overload_notification_logs: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "userId", "lastNotifiedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        userId: { bsonType: "objectId" },
+        lastNotifiedAt: { bsonType: "date" },
         createdAt: { bsonType: "date" },
         updatedAt: { bsonType: "date" },
       },
@@ -359,34 +482,6 @@ const validators = {
       },
     },
   },
-  auth_password_reset_tokens: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["userId", "tokenHash", "expiresAt", "createdAt"],
-      properties: {
-        _id: { bsonType: "objectId" },
-        userId: { bsonType: "objectId" },
-        tokenHash: { bsonType: "string", minLength: 32, maxLength: 512 },
-        expiresAt: { bsonType: "date" },
-        usedAt: { bsonType: ["date", "null"] },
-        createdAt: { bsonType: "date" },
-      },
-    },
-  },
-  auth_email_verification_tokens: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["userId", "tokenHash", "expiresAt", "createdAt"],
-      properties: {
-        _id: { bsonType: "objectId" },
-        userId: { bsonType: "objectId" },
-        tokenHash: { bsonType: "string", minLength: 32, maxLength: 512 },
-        expiresAt: { bsonType: "date" },
-        verifiedAt: { bsonType: ["date", "null"] },
-        createdAt: { bsonType: "date" },
-      },
-    },
-  },
   failed_queue_jobs: {
     $jsonSchema: {
       bsonType: "object",
@@ -406,21 +501,6 @@ const validators = {
         status: { enum: ["failed", "retried", "resolved"] },
         failedAt: { bsonType: "date" },
         resolvedAt: { bsonType: ["date", "null"] },
-      },
-    },
-  },
-  auth_otps: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["userId", "otp", "expiresAt", "createdAt", "updatedAt"],
-      properties: {
-        _id: { bsonType: "objectId" },
-        userId: { bsonType: "objectId" },
-        otp: { bsonType: "string", minLength: 1, maxLength: 10 },
-        expiresAt: { bsonType: "date" },
-        verified: { bsonType: "bool" },
-        createdAt: { bsonType: "date" },
-        updatedAt: { bsonType: "date" },
       },
     },
   },
@@ -452,92 +532,11 @@ const validators = {
       },
     },
   },
-  suggestions: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["workspaceId", "risk_category", "risk_score", "confidence", "scope"],
-      properties: {
-        _id: { bsonType: "objectId" },
-        workspaceId: { bsonType: "objectId" },
-        projectId: { bsonType: "objectId" },
-        risk_category: {
-          enum: [
-            "Cross-Project Conflict",
-            "Dependency Conflict",
-            "Milestone Mismatch",
-            "Due-Date Clustering",
-            "Stuck Task",
-            "Overload",
-          ],
-        },
-        risk_score: { bsonType: ["int", "double"] },
-        confidence: { bsonType: ["int", "double"] },
-        scope: {
-          bsonType: "object",
-          required: ["type", "id"],
-          properties: {
-            type: { enum: ["person", "task", "project"] },
-            id: { bsonType: "objectId" },
-          },
-        },
-        message: { bsonType: "string" },
-        details: { bsonType: ["object", "null"] },
-        phrased_text: { bsonType: ["string", "null"] },
-        validated: { bsonType: "bool" },
-        model_version: { bsonType: "string" },
-        status: { enum: ["active", "resolved", "dismissed"] },
-        createdAt: { bsonType: "date" },
-        updatedAt: { bsonType: "date" },
-      },
-    },
-  },
-  epics: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["workspaceId", "projectId", "createdBy", "name", "createdAt", "updatedAt"],
-      properties: {
-        _id: { bsonType: "objectId" },
-        workspaceId: { bsonType: "objectId" },
-        projectId: { bsonType: "objectId" },
-        createdBy: { bsonType: "objectId" },
-        name: { bsonType: "string", minLength: 1, maxLength: 180 },
-        summary: { bsonType: "string", maxLength: 500 },
-        description: { bsonType: "string", maxLength: 4000 },
-        color: { bsonType: "string" },
-        status: { enum: ["To Do", "In Progress", "Done"] },
-        startDate: { bsonType: ["date", "null"] },
-        dueDate: { bsonType: ["date", "null"] },
-        createdAt: { bsonType: "date" },
-        updatedAt: { bsonType: "date" },
-        deletedAt: { bsonType: ["date", "null"] },
-      },
-    },
-  },
-  sprints: {
-    $jsonSchema: {
-      bsonType: "object",
-      required: ["workspaceId", "projectId", "createdBy", "name", "startDate", "endDate", "status", "createdAt", "updatedAt"],
-      properties: {
-        _id: { bsonType: "objectId" },
-        workspaceId: { bsonType: "objectId" },
-        projectId: { bsonType: "objectId" },
-        createdBy: { bsonType: "objectId" },
-        name: { bsonType: "string", minLength: 1, maxLength: 120 },
-        goal: { bsonType: "string", maxLength: 2000 },
-        status: { enum: ["future", "active", "completed"] },
-        startDate: { bsonType: "date" },
-        endDate: { bsonType: "date" },
-        completedAt: { bsonType: ["date", "null"] },
-        createdAt: { bsonType: "date" },
-        updatedAt: { bsonType: "date" },
-        deletedAt: { bsonType: ["date", "null"] },
-      },
-    },
-  },
 };
 
 const indexes = {
   users: [{ key: { email: 1 }, options: { unique: true, collation: { locale: "en", strength: 2 } } }],
+  workspaces: [{ key: { ownerUserId: 1 } }],
   workspace_members: [
     { key: { workspaceId: 1, userId: 1 }, options: { unique: true } },
     { key: { userId: 1, role: 1 } },
@@ -545,6 +544,8 @@ const indexes = {
   projects: [
     { key: { workspaceId: 1, status: 1, updatedAt: -1 } },
     { key: { workspaceId: 1, owner: 1 } },
+    { key: { workspaceId: 1, key: 1 }, options: { unique: true } },
+    { key: { name: "text", description: "text" } },
   ],
   milestones: [{ key: { workspaceId: 1, projectId: 1, dueDate: 1 } }],
   tasks: [
@@ -553,10 +554,28 @@ const indexes = {
     { key: { workspaceId: 1, projectId: 1, milestoneId: 1 } },
     { key: { workspaceId: 1, title: "text", description: "text" } },
   ],
+  epics: [{ key: { workspaceId: 1, projectId: 1, status: 1 } }],
+  sprints: [
+    { key: { workspaceId: 1, projectId: 1, status: 1 } },
+    { key: { projectId: 1, startDate: 1, endDate: 1 } },
+  ],
   updates: [{ key: { workspaceId: 1, timestamp: -1 } }],
   activities: [{ key: { workspaceId: 1, timestamp: -1 } }],
   notifications: [{ key: { recipientUserId: 1, read: 1, timestamp: -1 } }],
-  startup_progress: [{ key: { workspaceId: 1 }, options: { unique: true } }],
+  suggestions: [
+    {
+      key: { workspaceId: 1, risk_category: 1, "scope.type": 1, "scope.id": 1 },
+      options: { unique: true },
+    },
+    { key: { workspaceId: 1, risk_category: 1, createdAt: -1 } },
+  ],
+  overload_scores: [
+    { key: { workspaceId: 1, userId: 1, date: 1 }, options: { unique: true } },
+    { key: { workspaceId: 1, userId: 1, date: -1 } },
+  ],
+  overload_notification_logs: [
+    { key: { workspaceId: 1, userId: 1 }, options: { unique: true } },
+  ],
   auth_accounts: [
     { key: { provider: 1, providerAccountId: 1 }, options: { unique: true } },
     { key: { userId: 1 } },
@@ -570,34 +589,15 @@ const indexes = {
     { key: { tokenHash: 1 }, options: { unique: true } },
     { key: { userId: 1, expiresAt: 1 } },
   ],
-  auth_password_reset_tokens: [{ key: { tokenHash: 1 }, options: { unique: true } }],
-  auth_email_verification_tokens: [{ key: { tokenHash: 1 }, options: { unique: true } }],
   failed_queue_jobs: [
     { key: { jobId: 1 } },
     { key: { queueName: 1, status: 1 } },
     { key: { toEmail: 1 } },
     { key: { failedAt: -1 } },
   ],
-  auth_otps: [
-    { key: { userId: 1, expiresAt: 1 } },
-    { key: { otp: 1 } },
-    { key: { expiresAt: 1 } },
-  ],
   security_logs: [
     { key: { userId: 1, createdAt: -1 } },
     { key: { eventType: 1 } },
-  ],
-  suggestions: [
-    {
-      key: { workspaceId: 1, risk_category: 1, "scope.type": 1, "scope.id": 1 },
-      options: { unique: true },
-    },
-    { key: { workspaceId: 1, risk_category: 1, createdAt: -1 } },
-  ],
-  epics: [{ key: { workspaceId: 1, projectId: 1, status: 1 } }],
-  sprints: [
-    { key: { workspaceId: 1, projectId: 1, status: 1 } },
-    { key: { projectId: 1, startDate: 1, endDate: 1 } },
   ],
 };
 
