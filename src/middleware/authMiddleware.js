@@ -1,10 +1,11 @@
 // middleware/authMiddleware.js
 const { createClerkClient } = require("@clerk/backend");
-const { extractTokenFromHeader } = require("../utils/jwt"); // Assuming helper extracts Bearer token
-const { User } = require("../models"); //
+const { extractTokenFromHeader } = require("../utils/jwt");
+const { User } = require("../models");[cite: 2]
 
 const clerkClient = createClerkClient({
   secretKey: process.env.CLERK_SECRET_KEY,
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
 });
 
 async function authMiddleware(req, res, next) {
@@ -16,23 +17,23 @@ async function authMiddleware(req, res, next) {
       return res.status(401).json({ error: "Unauthorized: Missing token" });
     }
 
-    // 1. Construct a fully-qualified dummy or host-based URL for ClerkRequest
     const protocol = req.protocol || "http";
     const host = req.get("host") || "localhost:5000";
     const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
 
-    // 2. Pass request options with authorized request state
+    // Verify request state with explicit keys
     const requestState = await clerkClient.authenticateRequest({
       ...req,
       url: fullUrl,
       headers: req.headers,
+      publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+      secretKey: process.env.CLERK_SECRET_KEY,
     });
 
     if (!requestState.isSignedIn) {
       return res.status(401).json({ error: "Invalid or expired session token" });
     }
 
-    // 3. Extract claims and attach user record from MongoDB
     const authPayload = requestState.toAuth();
     const clerkUserId = authPayload.userId;
 

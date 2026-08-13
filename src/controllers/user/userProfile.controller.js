@@ -1,97 +1,49 @@
-const userService = require("../../services/userProfileService.js");
+// controllers/user/userProfile.controller.js
+const { User } = require("../../models");
 
-// Create User Profile
 async function createUserProfile(req, res) {
   try {
-    const { name, email, avatar, roleTitle, skills, shortbio } = req.body;
+    const { email, roleTitle, skills, shortbio, name } = req.body;
+    
+    // Find by authenticated user ID or body email
+    const targetEmail = email || req.user?.email;
 
-    const user = await userService.createUserProfile({
-      name,
-      email,
-      avatar,
-      roleTitle,
-      skills,
-      shortbio,
-    });
+    if (!targetEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "Email or authenticated session required.",
+      });
+    }
 
-    return res.status(201).json({
-      success: true,
-      message: "User profile created successfully.",
-      data: user,
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-      errors: error.errors,
-      stack: error.stack,
-    });
-  }
-}
-
-// Get User By ID
-async function getUserById(req, res) {
-  try {
-    const { id } = req.params;
-    const user = await userService.getUserById(id);
+    // Update existing user created via Webhook instead of throwing "already exists"
+    const user = await User.findOneAndUpdate(
+      { email: targetEmail.toLowerCase().trim() },
+      {
+        $set: {
+          ...(name && { name }),
+          ...(roleTitle && { roleTitle }),
+          ...(skills && { skills }),
+          ...(shortbio && { shortbio }),
+        },
+      },
+      { new: true, runValidators: true }
+    );
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: "User not found.",
-      });
-    }
-
-    return res.json({
-      success: true,
-      data: user,
-    });
-  } catch (error) {
-    console.error(error);
-    return res.status(400).json({
-      success: false,
-      message: error.message,
-      errors: error.errors,
-      stack: error.stack,
-    });
-  }
-}
-
-// 🔥 NEW: Toggle 2FA for the authenticated user
-async function toggleTwoFactor(req, res) {
-  try {
-    const userId = req.user.id; // from authMiddleware
-    const { enabled } = req.body;
-
-    if (typeof enabled !== "boolean") {
-      return res.status(400).json({
-        success: false,
-        message: "enabled must be a boolean",
-      });
-    }
-
-    const updatedUser = await userService.updateUser(userId, {
-      twoFactorEnabled: enabled,
-    });
-
-    if (!updatedUser) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
+        message: "User profile not found.",
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: `Two-factor authentication ${enabled ? 'enabled' : 'disabled'} successfully.`,
-      data: {
-        twoFactorEnabled: updatedUser.twoFactorEnabled,
-      },
+      message: "User profile updated successfully.",
+      data: user,
     });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({
+    console.error("User profile error:", error);
+    return res.status(400).json({
       success: false,
       message: error.message,
     });
@@ -100,6 +52,4 @@ async function toggleTwoFactor(req, res) {
 
 module.exports = {
   createUserProfile,
-  getUserById,
-  toggleTwoFactor, // export new method
 };
