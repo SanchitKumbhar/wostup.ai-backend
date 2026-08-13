@@ -3,13 +3,13 @@ const router = express.Router();
 const userProfileController = require("../controllers/user/userProfile.controller");
 const { authMiddleware } = require("../middleware/authMiddleware");
 
-// Create Profile (public)
-router.post("/", userProfileController.createUserProfile);
+// Create / Update Profile (authenticated or explicit email)
+router.post("/", authMiddleware, userProfileController.createUserProfile);
 
-// Get Profile by ID (public – but you may want to protect it)
+// Get Profile by ID
 router.get("/:id", userProfileController.getUserById);
 
-// 🔥 Toggle 2FA (authenticated)
+// Toggle 2FA (authenticated)
 router.patch("/toggle-2fa", authMiddleware, userProfileController.toggleTwoFactor);
 
 module.exports = router;

@@ -1,11 +1,10 @@
 // controllers/user/userProfile.controller.js
 const { User } = require("../../models");
 
+// 1. Create or Update User Profile
 async function createUserProfile(req, res) {
   try {
     const { email, roleTitle, skills, shortbio, name } = req.body;
-    
-    // Find by authenticated user ID or body email
     const targetEmail = email || req.user?.email;
 
     if (!targetEmail) {
@@ -15,7 +14,6 @@ async function createUserProfile(req, res) {
       });
     }
 
-    // Update existing user created via Webhook instead of throwing "already exists"
     const user = await User.findOneAndUpdate(
       { email: targetEmail.toLowerCase().trim() },
       {
@@ -50,6 +48,64 @@ async function createUserProfile(req, res) {
   }
 }
 
+// 2. Get User Profile by ID
+async function getUserById(req, res) {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id).select("-password");
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: user,
+    });
+  } catch (error) {
+    console.error("Get user by ID error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error fetching user profile",
+    });
+  }
+}
+
+// 3. Toggle Two-Factor Authentication
+async function toggleTwoFactor(req, res) {
+  try {
+    const userId = req.user?._id || req.auth?.userId;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    user.twoFactorEnabled = !user.twoFactorEnabled;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `2FA ${user.twoFactorEnabled ? "enabled" : "disabled"} successfully`,
+      twoFactorEnabled: user.twoFactorEnabled,
+    });
+  } catch (error) {
+    console.error("Toggle 2FA error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error toggling 2FA",
+    });
+  }
+}
+
 module.exports = {
   createUserProfile,
+  getUserById,
+  toggleTwoFactor,
 };

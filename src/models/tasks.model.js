@@ -14,17 +14,17 @@ const taskSchema = new mongoose.Schema(
   {
     workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Workspace" },
     projectId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Project" },
-    sprintId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Sprints" },
-    epicId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Epics" },
+    sprintId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Sprint" },
+    epicId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Epic" },
+    milestoneId: { type: mongoose.Schema.Types.ObjectId, default: null, ref: "Milestone" },
     
     title: { type: String, required: true, trim: true, minlength: 1, maxlength: 240 },
-    description: { type: String, default: "", maxlength: 4000 }, // ✅ CHANGED: not required
+    description: { type: String, default: "", maxlength: 4000 },
     status: {
       type: String,
-      enum: ["todo", "in-progress", "blocked", "waiting-review", "done","backlog"],
-      default: "backlog",
-      required: true,
+      enum: ["todo", "in-progress", "blocked", "waiting-review", "done", "backlog"],
       default: "todo",
+      required: true,
     },
     statusEnteredAt: { type: Date, default: Date.now },
     priority: {
@@ -36,13 +36,12 @@ const taskSchema = new mongoose.Schema(
     actualProgress: { type: Number, min: 0, max: 100, default: 0 },
     assigneeUserId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "User" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "User" },
-    projectId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Project" },
     dependency: { type: [mongoose.Schema.Types.ObjectId], default: [] },
     dueDate: { type: Date, default: null },
     comments: { type: [commentSchema], default: [] },
     deletedAt: { type: Date, default: null },
 
-    // GMAIL FIELDS (optional)
+    // Gmail Integration Fields
     sender: { type: String, trim: true },
     emailId: { type: String, trim: true },
     threadId: { type: String, trim: true },
