@@ -21,17 +21,20 @@ const addonRoutes = require("./routes/addonRoutes");
 const  clerkWebhookHandler  = require("./controllers/auth/clerkWebhookController");
 const epicRoutes = require("./routes/epicRoutes");
 const sprintRoutes = require("./routes/sprintRoutes");
+require('dns').setServers(['8.8.8.8', '1.1.1.1']);
+
 const app = express();
 app.use(cors());
-app.use(express.json());
-
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
 app.post(
   "/api/webhooks/clerk",
   express.raw({ type: "application/json" }),
   clerkWebhookHandler
 );
+app.use(express.json());
+
+const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
+
 // routes
 app.use("/", healthRoutes);
 app.use("/api/auth", authRoutes);
