@@ -21,12 +21,16 @@ const addonRoutes = require("./routes/addonRoutes");
 const clerkWebhookHandler = require("./controllers/auth/clerkWebhookController");
 const epicRoutes = require("./routes/epicRoutes");
 const sprintRoutes = require("./routes/sprintRoutes");
+const githubRoutes = require("./routes/github.routes");
+const githubWebhookRoutes = require("./routes/githubWebhook.routes");
 
 require("dns").setServers(["8.8.8.8", "1.1.1.1"]);
 
 const app = express();
 app.use(cors());
 
+// Mount raw webhook route BEFORE express.json() to preserve raw body Buffer for HMAC verification
+app.use("/webhooks/github", githubWebhookRoutes);
 // Clerk webhook requires raw body buffer for Svix signature verification
 app.post(
   "/api/webhooks/clerk",
@@ -55,6 +59,8 @@ app.use("/api/team-load", teamLoadRoutes);
 app.use("/api/sessions", sessionsRoutes);
 app.use("/api/conflicts", conflictDetectorRoutes);
 app.use("/api/addon", addonRoutes);
+app.use("/api/github", githubRoutes);
+
 app.use("/api/epics", epicRoutes);
 app.use("/api/sprints", sprintRoutes);
 

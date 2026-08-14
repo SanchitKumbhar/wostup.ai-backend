@@ -2,6 +2,8 @@
   "dependencies": {
     "@clerk/backend": "^3.16.4",
     "@getbrevo/brevo": "^5.0.4",
+    "@octokit/auth-app": "^8.3.0",
+    "@octokit/rest": "^22.0.1",
     "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3.0.3",
     "bullmq": "^5.76.8",

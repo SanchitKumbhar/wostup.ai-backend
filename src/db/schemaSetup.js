@@ -532,6 +532,162 @@ const validators = {
       },
     },
   },
+  suggestions: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "risk_category", "risk_score", "confidence", "scope"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        risk_category: {
+          enum: [
+            "Cross-Project Conflict",
+            "Dependency Conflict",
+            "Milestone Mismatch",
+            "Due-Date Clustering",
+            "Stuck Task",
+            "Overload",
+          ],
+        },
+        risk_score: { bsonType: ["int", "double"] },
+        confidence: { bsonType: ["int", "double"] },
+        scope: {
+          bsonType: "object",
+          required: ["type", "id"],
+          properties: {
+            type: { enum: ["person", "task", "project"] },
+            id: { bsonType: "objectId" },
+          },
+        },
+        message: { bsonType: "string" },
+        details: { bsonType: ["object", "null"] },
+        phrased_text: { bsonType: ["string", "null"] },
+        validated: { bsonType: "bool" },
+        model_version: { bsonType: "string" },
+        status: { enum: ["active", "resolved", "dismissed"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  epics: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "projectId", "createdBy", "name", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
+        name: { bsonType: "string", minLength: 1, maxLength: 180 },
+        summary: { bsonType: "string", maxLength: 500 },
+        description: { bsonType: "string", maxLength: 4000 },
+        color: { bsonType: "string" },
+        status: { enum: ["To Do", "In Progress", "Done"] },
+        startDate: { bsonType: ["date", "null"] },
+        dueDate: { bsonType: ["date", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+        deletedAt: { bsonType: ["date", "null"] },
+      },
+    },
+  },
+  sprints: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "projectId", "createdBy", "name", "startDate", "endDate", "status", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        projectId: { bsonType: "objectId" },
+        createdBy: { bsonType: "objectId" },
+        name: { bsonType: "string", minLength: 1, maxLength: 120 },
+        goal: { bsonType: "string", maxLength: 2000 },
+        status: { enum: ["future", "active", "completed"] },
+        startDate: { bsonType: "date" },
+        endDate: { bsonType: "date" },
+        completedAt: { bsonType: ["date", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+        deletedAt: { bsonType: ["date", "null"] },
+      },
+    },
+  },
+  github_installations: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["workspaceId", "installationId", "accountLogin", "installedByUserId", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        workspaceId: { bsonType: "objectId" },
+        installationId: { bsonType: ["int", "long", "double"] },
+        accountLogin: { bsonType: "string" },
+        accountType: { enum: ["User", "Organization"] },
+        installedByUserId: { bsonType: "objectId" },
+        status: { enum: ["active", "removed"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  github_repos: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["installationId", "githubRepoId", "fullName", "createdAt", "updatedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        installationId: { bsonType: ["int", "long", "double"] },
+        githubRepoId: { bsonType: ["int", "long", "double"] },
+        fullName: { bsonType: "string" },
+        private: { bsonType: "bool" },
+        defaultBranch: { bsonType: "string" },
+        projectId: { bsonType: ["objectId", "null"] },
+        attachedByUserId: { bsonType: ["objectId", "null"] },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  github_pull_requests: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["repoId", "githubPrId", "number", "title", "state", "authorLogin", "createdAtGh", "updatedAtGh"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        repoId: { bsonType: "objectId" },
+        githubPrId: { bsonType: ["int", "long", "double"] },
+        number: { bsonType: ["int", "long", "double"] },
+        title: { bsonType: "string" },
+        state: { bsonType: "string" },
+        merged: { bsonType: "bool" },
+        mergedAt: { bsonType: ["date", "null"] },
+        authorLogin: { bsonType: "string" },
+        createdAtGh: { bsonType: "date" },
+        updatedAtGh: { bsonType: "date" },
+        rawPayload: { bsonType: "object" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
+  github_commits: {
+    $jsonSchema: {
+      bsonType: "object",
+      required: ["repoId", "sha", "message", "committedAt"],
+      properties: {
+        _id: { bsonType: "objectId" },
+        repoId: { bsonType: "objectId" },
+        sha: { bsonType: "string" },
+        message: { bsonType: "string" },
+        authorLogin: { bsonType: "string" },
+        committedAt: { bsonType: "date" },
+        rawPayload: { bsonType: "object" },
+        createdAt: { bsonType: "date" },
+        updatedAt: { bsonType: "date" },
+      },
+    },
+  },
 };
 
 const indexes = {
@@ -598,6 +754,33 @@ const indexes = {
   security_logs: [
     { key: { userId: 1, createdAt: -1 } },
     { key: { eventType: 1 } },
+  ],
+  suggestions: [
+    {
+      key: { workspaceId: 1, risk_category: 1, "scope.type": 1, "scope.id": 1 },
+      options: { unique: true },
+    },
+    { key: { workspaceId: 1, risk_category: 1, createdAt: -1 } },
+  ],
+  epics: [{ key: { workspaceId: 1, projectId: 1, status: 1 } }],
+  sprints: [
+    { key: { workspaceId: 1, projectId: 1, status: 1 } },
+    { key: { projectId: 1, startDate: 1, endDate: 1 } },
+  ],
+  github_installations: [
+    { key: { installationId: 1 }, options: { unique: true } },
+    { key: { workspaceId: 1, status: 1 } },
+  ],
+  github_repos: [
+    { key: { githubRepoId: 1 }, options: { unique: true } },
+    { key: { installationId: 1, projectId: 1 } },
+  ],
+  github_pull_requests: [
+    { key: { repoId: 1, githubPrId: 1 }, options: { unique: true } },
+    { key: { repoId: 1, updatedAtGh: -1, _id: -1 } },
+  ],
+  github_commits: [
+    { key: { repoId: 1, sha: 1 }, options: { unique: true } },
   ],
 };
 

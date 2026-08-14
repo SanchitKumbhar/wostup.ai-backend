@@ -1,10 +1,7 @@
 const { Worker } = require("bullmq");
-const IORedis = require("ioredis");
-const { Task, Suggestion, Project } = require("../models"); // 1. Added Project model
-const aiNotificationQueue = require("../queues/aiNotificationQueue"); // 2. Import AI Notification Queue
-
-const redisUrl = process.env.REDIS_URL || "redis://127.0.0.1:6379";
-const connection = new IORedis(redisUrl, { maxRetriesPerRequest: null });
+const { Task, Suggestion, Project } = require("../models");
+const aiNotificationQueue = require("../queues/aiNotificationQueue");
+const redisConnection = require("../redisConfig/bullmqRedisConnection");
 
 const stuckTaskWorker = new Worker(
   "STUCK_TASK_WORKER",
@@ -59,7 +56,7 @@ const stuckTaskWorker = new Worker(
       console.log(`[STUCK TASK DETECTED & NOTIFIED] Task ID: ${task._id} | Status: ${task.status}`); //[cite: 1]
     }
   },
-  { connection }
+  { connection: redisConnection }
 );
 
 module.exports = stuckTaskWorker;

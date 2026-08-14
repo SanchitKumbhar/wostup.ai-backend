@@ -19,14 +19,22 @@ async function setupRedis(io) {
             }
         });
 
+        let pubLogged = false;
         pubClient.on("error", (err) => {
-            console.error("⚠️ Redis PubClient Error:", err.message);
+            if (!pubLogged) {
+                console.warn("⚠️ Redis PubClient Warning:", err.message);
+                pubLogged = true;
+            }
         });
 
         const subClient = pubClient.duplicate();
 
+        let subLogged = false;
         subClient.on("error", (err) => {
-            console.error("⚠️ Redis SubClient Error:", err.message);
+            if (!subLogged) {
+                console.warn("⚠️ Redis SubClient Warning:", err.message);
+                subLogged = true;
+            }
         });
 
         // Add manual timeout wrapper
