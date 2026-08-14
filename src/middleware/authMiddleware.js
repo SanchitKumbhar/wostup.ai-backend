@@ -1,4 +1,3 @@
-// middleware/authMiddleware.js
 const { createClerkClient } = require("@clerk/backend");
 const { extractTokenFromHeader } = require("../utils/jwt");
 const { User } = require("../models");
@@ -14,6 +13,7 @@ async function authMiddleware(req, res, next) {
     const token = extractTokenFromHeader(authHeader);
 
     if (!token) {
+      console.warn(`[Auth Fail] Missing token on path: ${req.originalUrl}`);
       return res.status(401).json({ error: "Unauthorized: Missing token" });
     }
 
@@ -21,7 +21,6 @@ async function authMiddleware(req, res, next) {
     const host = req.get("host") || "localhost:5000";
     const fullUrl = `${protocol}://${host}${req.originalUrl || req.url}`;
 
-    // Verify request state with explicit keys
     const requestState = await clerkClient.authenticateRequest({
       ...req,
       url: fullUrl,
@@ -31,16 +30,17 @@ async function authMiddleware(req, res, next) {
     });
 
     if (!requestState.isSignedIn) {
+      console.warn(`[Auth Fail] Clerk session invalid on path: ${req.originalUrl}`);
       return res.status(401).json({ error: "Invalid or expired session token" });
     }
 
     const authPayload = requestState.toAuth();
     const clerkUserId = authPayload.userId;
-
     const userEmail = authPayload.claims?.email || req.headers["x-user-email"];
-    const user = await User.findOne({ email: userEmail?.toLowerCase().trim() });
 
+    const user = await User.findOne({ email: userEmail?.toLowerCase().trim() });
     if (!user) {
+      console.warn(`[Auth Fail] User email ${userEmail} not synced to Mongo DB`);
       return res.status(401).json({ error: "User profile not found in database" });
     }
 
@@ -50,7 +50,6 @@ async function authMiddleware(req, res, next) {
       clerkId: clerkUserId,
       email: user.email,
     };
-
     next();
   } catch (err) {
     console.error("Auth Middleware Error:", err);

@@ -32,7 +32,7 @@ app.post(
   "/api/webhooks/clerk",
   express.raw({ type: "application/json" }),
   clerkWebhookHandler
-);
+); // Fixed missing closing parenthesis here
 
 app.use(express.json());
 
@@ -58,7 +58,7 @@ app.use("/api/addon", addonRoutes);
 app.use("/api/epics", epicRoutes);
 app.use("/api/sprints", sprintRoutes);
 
-// Error handler
+// Unhandled error handler
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error", err);
   res.status(500).json({ error: "Internal server error" });

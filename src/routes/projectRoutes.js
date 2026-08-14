@@ -47,7 +47,7 @@ const {
 } = require("../controllers/projectsController/project.Controller");
 
 // Create Project
-router.post("/v1/createProject", authMiddleware, createProjectController);
+router.post("/v1/createProject", authMiddleware,createProjectController);
 
 // Get all projects of a workspace (supports query params: ?status=Active&priority=High&projectType=kanban&search=keyword)
 router.get("/v1/getProjects/:workspaceId", getProjectController);
