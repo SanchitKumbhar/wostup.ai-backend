@@ -15,27 +15,35 @@ const workspaceRoutes = require("./routes/workspaceRoutes");
 const projectHealthRoutes = require("./routes/projectHealthRoutes");
 const teamLoadRoutes = require("./routes/teamLoadRoutes");
 const userProfileRoutes = require("./routes/userProfileRoutes");
-const sessionsRoutes = require("./routes/sessions"); // ✅ already required
+const sessionsRoutes = require("./routes/sessions");
 const conflictDetectorRoutes = require("./routes/conflictDetectorRoutes");
 const addonRoutes = require("./routes/addonRoutes");
-
+const clerkWebhookHandler = require("./controllers/auth/clerkWebhookController");
 const epicRoutes = require("./routes/epicRoutes");
 const sprintRoutes = require("./routes/sprintRoutes");
 const githubRoutes = require("./routes/github.routes");
 const githubWebhookRoutes = require("./routes/githubWebhook.routes");
+
+require("dns").setServers(["8.8.8.8", "1.1.1.1"]);
 
 const app = express();
 app.use(cors());
 
 // Mount raw webhook route BEFORE express.json() to preserve raw body Buffer for HMAC verification
 app.use("/webhooks/github", githubWebhookRoutes);
+// Clerk webhook requires raw body buffer for Svix signature verification
+app.post(
+  "/api/webhooks/clerk",
+  express.raw({ type: "application/json" }),
+  clerkWebhookHandler
+); // Fixed missing closing parenthesis here
 
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
 
-// routes
+// Routes
 app.use("/", healthRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/teamMember", teamRoutes);
@@ -48,14 +56,15 @@ app.use("/api/comments", commentRoutes);
 app.use("/api/workspaces", workspaceRoutes);
 app.use("/api/projectHealth", projectHealthRoutes);
 app.use("/api/team-load", teamLoadRoutes);
-app.use("/api/sessions", sessionsRoutes); // ✅ use the variable
+app.use("/api/sessions", sessionsRoutes);
 app.use("/api/conflicts", conflictDetectorRoutes);
 app.use("/api/addon", addonRoutes);
 app.use("/api/github", githubRoutes);
 
 app.use("/api/epics", epicRoutes);
 app.use("/api/sprints", sprintRoutes);
-// error handler
+
+// Unhandled error handler
 app.use((err, _req, res, _next) => {
   console.error("Unhandled error", err);
   res.status(500).json({ error: "Internal server error" });

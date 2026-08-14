@@ -1,80 +1,125 @@
+const mongoose = require("mongoose");
 const { Workspace, WorkspaceMember } = require("../models/index");
 
-async function createWorkspaceService(name, ownerUserId, description, settings) {
-    // Check if workspace already exists for this owner with the same name
-    const existing = await Workspace.findOne({
-        ownerUserId: ownerUserId,
-        name: name
+async function createWorkspaceService(name, userid, description = "", settings = {}) {
+  try {
+    const userObjectId = mongoose.Types.ObjectId.isValid(userid)
+      ? new mongoose.Types.ObjectId(userid)
+      : userid;
+
+    const existingWorkspace = await Workspace.findOne({
+      name: name.trim(),
+      ownerUserId: userObjectId,
     });
 
-    if (existing) {
-        return 409; // conflict
+    if (existingWorkspace) {
+      return 409;
     }
 
-    // Create the workspace
     const workspace = await Workspace.create({
-        name,
-        ownerUserId,
-        description: description || "",
-        settings: settings || {}
+      name: name.trim(),
+      ownerUserId: userObjectId,
+      description,
+      settings,
     });
 
-    // ✅ Add the owner as a member
     await WorkspaceMember.create({
-        workspaceId: workspace._id,
-        userId: ownerUserId,
-        role: "owner",
-        joinedAt: new Date()
+      workspaceId: workspace._id,
+      userId: userObjectId,
+      role: "owner",
+      joinedAt: new Date(),
     });
 
     return { status: 201, data: workspace };
+  } catch (error) {
+    console.error("Create workspace service error:", error);
+    return { status: 500, message: error.message };
+  }
 }
 
-async function updateWorkspaceService(workspaceId, body) {
-    const result = await Workspace.updateOne(
-        { _id: workspaceId },
-        { $set: body }
-    );
+async function updateWorkspaceService(workspaceid, updateData) {
+  try {
+    const workspace = await Workspace.findByIdAndUpdate(workspaceid, updateData, {
+      new: true,
+      runValidators: true,
+    });
 
-    if (result.matchedCount === 0) {
-        return 304;
+    if (!workspace) {
+      return { status: 404, message: "Workspace not found" };
     }
 
-    return { status: 200, data: result };
+    return { status: 200, data: workspace };
+  } catch (error) {
+    console.error("Update workspace service error:", error);
+    return { status: 500, message: error.message };
+  }
 }
 
-async function getWorkspaceByIdService(workspaceId) {
-    const data = await Workspace.findById(workspaceId);
-    if (!data) {
-        return { status: 404, message: "Workspace not found" };
+async function getWorkspaceByIdService(workspaceid) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(workspaceid)) {
+      return { status: 400, message: "Invalid workspace ID" };
     }
-    return { status: 200, data: data };
+
+    const workspace = await Workspace.findById(workspaceid);
+    if (!workspace) {
+      return { status: 404, message: "Workspace not found" };
+    }
+
+    return { status: 200, data: workspace };
+  } catch (error) {
+    console.error("Get workspace by ID service error:", error);
+    return { status: 500, message: error.message };
+  }
 }
 
-async function getWorkspaceService(ownerUserId) {
-    const data = await Workspace.find({ ownerUserId: ownerUserId });
-    if (!data || data.length === 0) {
-        return { status: 404, message: "No workspaces found for this user" };
+async function getWorkspaceService(userid) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(userid)) {
+      return { status: 400, message: "Invalid user ObjectId format" };
     }
-    return { status: 200, data: data };
+
+    const userObjectId = new mongoose.Types.ObjectId(userid);
+
+    // Find memberships where user is a member/owner
+    const memberDocs = await WorkspaceMember.find({ userId: userObjectId });
+    const workspaceIds = memberDocs.map((m) => m.workspaceId);
+
+    const workspaces = await Workspace.find({
+      $or: [{ ownerUserId: userObjectId }, { _id: { $in: workspaceIds } }],
+    }).sort({ createdAt: -1 });
+
+    return { status: 200, data: workspaces };
+  } catch (error) {
+    console.error("Get workspace service error:", error);
+    return { status: 500, message: error.message };
+  }
 }
 
-async function deleteWorkspaceService(workspaceId) {
-    const result = await Workspace.deleteOne({ _id: workspaceId });
-    if (result.deletedCount === 0) {
-        return { status: 404, message: "Workspace not found" };
+async function deleteWorkspaceService(workspaceid) {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(workspaceid)) {
+      return { status: 400, message: "Invalid workspace ID" };
     }
-    return {
-        status: 200,
-        message: "Workspace deleted successfully",
-        data: result
-    };
+
+    const workspace = await Workspace.findByIdAndDelete(workspaceid);
+    if (!workspace) {
+      return { status: 404, message: "Workspace not found" };
+    }
+
+    await WorkspaceMember.deleteMany({ workspaceId: workspaceid });
+
+    return { status: 200, message: "Workspace deleted successfully" };
+  } catch (error) {
+    console.error("Delete workspace service error:", error);
+    return { status: 500, message: error.message };
+  }
 }
 
 module.exports = {
-    createWorkspaceService,
-    updateWorkspaceService,
-    getWorkspaceByIdService,
-    getWorkspaceService,
-    deleteWorkspaceService
+  createWorkspaceService,
+  updateWorkspaceService,
+  getWorkspaceByIdService,
+  getWorkspaceService,
+  deleteWorkspaceService,
 };
