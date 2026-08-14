@@ -33,6 +33,9 @@ const markNotificationAsReadService = async (notificationId, recipientUserId) =>
 
 const deleteNotificationService = async (notificationId, recipientUserId) => {
     try {
+        // FIXED: was deleteOne (returns only { deletedCount }), so callers
+        // had no workspaceId to scope their socket emit to. findOneAndDelete
+        // returns the full deleted document before it's removed.
         const notification = await Notification.findOneAndDelete({
             _id: notificationId,
             recipientUserId

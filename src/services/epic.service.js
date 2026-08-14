@@ -1,4 +1,5 @@
 const { Epic, WorkspaceMember } = require("../models/index");
+const { resolveProjectId } = require("../utils/resolveProject");
 
 async function createEpicService(payload, userId) {
     const { workspaceId, projectId, name, summary, description, color, status, startDate, dueDate } = payload;
@@ -53,12 +54,27 @@ async function getEpicByIdService(epicId) {
     }
     return { statuscode: 200, data };
 }
-
 async function getAllEpicsService(projectId) {
-    const data = await Epic.find({ projectId, deletedAt: null }).sort({ createdAt: -1 });
-    return { statuscode: 200, data };
-}
+  try {
+    const resolvedId = await resolveProjectId(projectId);
+    if (!resolvedId) {
+      return { statuscode: 404, data: null, error: "Project not found" };
+    }
 
+    const epics = await Epic.find({
+      projectId: resolvedId,
+      deletedAt: null,
+    })
+      .populate("createdBy", "name email avatar")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    return { statuscode: 200, data: epics };
+  } catch (error) {
+    console.error("Error in getAllEpicsService:", error);
+    return { statuscode: 500, data: null, error: error.message };
+  }
+}
 async function deleteEpicService(epicId, userId) {
     const epic = await Epic.findById(epicId, { createdBy: 1 });
     if (!epic) {

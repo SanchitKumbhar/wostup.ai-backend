@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-//const { authMiddleware } = require("../middleware/authMiddleware");
+const { authMiddleware } = require("../middleware/authMiddleware");
 
 const {
   createTaskController,
@@ -12,22 +12,22 @@ const {
 } = require("../controllers/projectsController/tasks.Controller");
 
 // Create task
-// router.post("/v1/createTask", authMiddleware, createTaskController);
-
-// // Update task
-// router.put("/v1/updateTask/:taskId", authMiddleware, updateTaskController);
-
-// // Delete task
-// router.delete("/v1/deleteTask/:taskId", authMiddleware, deleteTaskController);
-
-// Create task
-router.post("/v1/createTask", createTaskController);
+router.post("/v1/createTask", authMiddleware, createTaskController);
 
 // Update task
-router.put("/v1/updateTask/:taskId", updateTaskController);
+router.put("/v1/updateTask/:taskId", authMiddleware, updateTaskController);
 
 // Delete task
-router.delete("/v1/deleteTask/:taskId", deleteTaskController);
+router.delete("/v1/deleteTask/:taskId", authMiddleware, deleteTaskController);
+
+// Create task
+// router.post("/v1/createTask", createTaskController);
+
+// // Update task
+// router.put("/v1/updateTask/:taskId", updateTaskController);
+
+// // Delete task
+// router.delete("/v1/deleteTask/:taskId", deleteTaskController);
 
 
 

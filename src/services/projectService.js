@@ -83,43 +83,74 @@ async function createProjectService(payload, userId) {
     await Project.create(projectData);
     return 200;
 }
+// services/projectService.js -> updateProjectService
+async function updateProjectService(projectId, updateData, userId) {
+  try {
+    // 1. Remove MongoDB / Mongoose immutable metadata and populated objects
+    const sanitized = { ...updateData };
+    delete sanitized._id;
+    delete sanitized.id;
+    delete sanitized.__v;
+    delete sanitized.createdAt;
+    delete sanitized.updatedAt;
+    delete sanitized.createdBy;
 
-async function updateProjectService(projectId, userId, body) {
-    const project = await Project.findById(projectId, { workspaceId: 1, createdBy: 1 });
-    if (!project) {
-        return 404;
+    // 2. If workspaceId or owner are objects (e.g., populated or {$oid}), flatten to ID
+    if (sanitized.workspaceId && typeof sanitized.workspaceId === "object") {
+      sanitized.workspaceId = sanitized.workspaceId._id || sanitized.workspaceId.$oid || sanitized.workspaceId;
     }
-    if (project.createdBy.toString() !== userId.toString()) {
-        return 403;
-    }
-
-    if (body.dueDate !== undefined) {
-        const parsedDueDate = new Date(body.dueDate);
-        if (Number.isNaN(parsedDueDate.getTime())) {
-            return 400;
-        }
-        body.dueDate = parsedDueDate;
-    }
-
-    if (body.startDate !== undefined) {
-        const parsedStartDate = new Date(body.startDate);
-        if (Number.isNaN(parsedStartDate.getTime())) {
-            return 400;
-        }
-        body.startDate = parsedStartDate;
+    if (sanitized.owner && typeof sanitized.owner === "object") {
+      sanitized.owner = sanitized.owner._id || sanitized.owner.$oid || sanitized.owner;
     }
 
-    // Update auditing fields
-    body.lastUpdatedBy = userId;
-    body.lastActivityAt = Date.now();
+    // 3. Normalize Enums if sent as lowercase
+    if (sanitized.status) {
+      const statusMap = {
+        planning: "Planning",
+        active: "Active",
+        "on hold": "On Hold",
+        "on-hold": "On Hold",
+        completed: "Completed",
+        cancelled: "Cancelled",
+      };
+      sanitized.status = statusMap[sanitized.status.toLowerCase()] || sanitized.status;
+    }
 
-    await Project.updateOne(
-        { _id: projectId },
-        { $set: body }
+    if (sanitized.priority) {
+      const priorityMap = {
+        low: "Low",
+        medium: "Medium",
+        high: "High",
+        critical: "Critical",
+      };
+      sanitized.priority = priorityMap[sanitized.priority.toLowerCase()] || sanitized.priority;
+    }
+
+    if (sanitized.projectType) {
+      sanitized.projectType = sanitized.projectType.toLowerCase(); // must be "scrum" or "kanban"
+    }
+
+    // 4. Handle empty date strings
+    if (sanitized.startDate === "") sanitized.startDate = null;
+    if (sanitized.dueDate === "") sanitized.dueDate = null;
+
+    // 5. Execute Mongoose Update
+    const updatedProject = await Project.findByIdAndUpdate(
+      projectId,
+      { $set: sanitized },
+      { new: true, runValidators: true }
     );
-    return 200;
-}
 
+    if (!updatedProject) {
+      return { statuscode: 404, data: null, error: "Project not found" };
+    }
+
+    return { statuscode: 200, data: updatedProject };
+  } catch (error) {
+    console.error("Error in updateProjectService:", error);
+    return { statuscode: 400, data: null, error: error.message };
+  }
+}
 async function deleteProjectService(projectId, userId) {
     const project = await Project.findById(projectId, { createdBy: 1 });
     if (!project) {

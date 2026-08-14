@@ -1,41 +1,59 @@
 const async_handler = require("express-async-handler");
 const MilestoneServices = require("../../services/milestoneService");
-
+// controllers/projectsController/milestones.Controller.js
 const createMilestoneController = async_handler(async (req, res) => {
-    if (!req.body) {
-        return res.status(400).json({
-            "message": "body not provided"
-        });
-    }
-    const { workspaceId, projectId, name, description, dueDate, completionPercentage } = req.body;
+  if (!req.body) {
+    return res.status(400).json({ message: "body not provided" });
+  }
 
-    const {statuscode,data}= await MilestoneServices.milestoneCreateService(
-        workspaceId,
-        projectId,
-        name,
-        description,
-        dueDate,
-        completionPercentage,
-        req.auth.userId
-    );
+  const {
+    workspaceId,
+    projectId,
+    name,
+    title, // in case frontend payload sends 'title'
+    description,
+    dueDate,
+    completionPercentage,
+    userId: bodyUserId,
+  } = req.body;
 
-    if (statuscode == 201) {
-        return res.status(201).json({
-            message: "milestone created",
-            data:data
-        });
+  const milestoneName = name || title;
+  const creatorUserId = req.auth?.userId || req.user?._id?.toString() || bodyUserId;
 
-    }
+  if (!milestoneName) {
+    return res.status(400).json({ message: "Milestone name is required" });
+  }
 
-    if (statuscode == 403) {
-        return res.status(403).json({
-            message: "only workspace members can create milestone"
-        });
-    }
+  if (!creatorUserId) {
+    return res.status(401).json({ message: "Unauthorized: User ID not found" });
+  }
 
-    return res.status(400).json({
-        message: "milestone not created"
+  const { statuscode, data, error } = await MilestoneServices.milestoneCreateService(
+    workspaceId,
+    projectId,
+    milestoneName,
+    description,
+    dueDate,
+    completionPercentage,
+    creatorUserId
+  );
+
+  if (statuscode === 201) {
+    return res.status(201).json({
+      message: "milestone created",
+      data: data,
     });
+  }
+
+  if (statuscode === 403) {
+    return res.status(403).json({
+      message: "only workspace members can create milestone",
+    });
+  }
+
+  return res.status(400).json({
+    message: error || "milestone not created",
+  });
 });
 
 const updateMilestineController = async_handler(async (req, res) => {

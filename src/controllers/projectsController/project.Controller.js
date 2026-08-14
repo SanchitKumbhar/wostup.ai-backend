@@ -60,6 +60,8 @@ const updateProjectController = async_handler(async (req, res) => {
         return res.status(400).json({ message: "body or projectId not provided" });
     }
 
+    console.log(req.body);
+
     const { userId } = req.body;
     if (!userId) {
         return res.status(400).json({ message: "userId is required in the request body" });

@@ -57,13 +57,27 @@ const getSprintByIdController = async_handler(async (req, res) => {
     }
     return res.status(200).json({ message: data });
 });
-
 const getAllSprintsController = async_handler(async (req, res) => {
-    if (!req.params.projectId) {
-        return res.status(400).json({ message: "projectId not provided" });
-    }
-    const { statuscode, data } = await sprintService.getAllSprintsService(req.params.projectId);
-    return res.status(statuscode).json({ message: data });
+  const { projectId } = req.params;
+  if (!projectId) {
+    return res.status(400).json({ message: "projectId param is required" });
+  }
+
+  const { statuscode = 500, data = [] } = (await sprintService.getAllSprintsService(projectId)) || {};
+
+  if (statuscode === 200) {
+    return res.status(200).json({
+      success: true,
+      message: "Sprints fetched successfully",
+      data: data || [],
+    });
+  }
+
+  return res.status(statuscode).json({
+    success: false,
+    message: "Failed to fetch sprints",
+    data: [],
+  });
 });
 
 const deleteSprintController = async_handler(async (req, res) => {

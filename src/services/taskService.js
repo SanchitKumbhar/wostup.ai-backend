@@ -3,7 +3,7 @@ const { Task, WorkspaceMember, User } = require("../models/index");
 const { Queue } = require("bullmq");
 const redisConnection = require("../redisConfig/bullmqRedisConnection");
 const { scheduleStuckCheck } = require("../queues/stuckTaskQueue");
-
+const { resolveProjectId } = require("../utils/resolveProject");
 const deadlineQueue = new Queue("DEADLINE_WORKER", {
   connection: redisConnection,
 });
@@ -483,32 +483,28 @@ async function taskGetByIdService(taskId) {
 // ============================================================
 // GET ALL TASKS
 // ============================================================
-
 async function taskGetAllService(projectId) {
   try {
-    const data = await Task.find({
-      projectId,
+    const resolvedId = await resolveProjectId(projectId);
+    if (!resolvedId) {
+      return { statuscode: 404, data: null, error: "Project not found" };
+    }
+
+    const tasks = await Task.find({
+      projectId: resolvedId,
+      deletedAt: null,
     })
-      .populate("sprintId", "name status")
-      .populate("epicId", "name color");
+      .populate("assigneeUserId", "name email avatar")
+      .populate("createdBy", "name email avatar")
+      .sort({ createdAt: -1 })
+      .lean();
 
-    return {
-      statuscode: 200,
-      data,
-    };
+    return { statuscode: 200, data: tasks };
   } catch (error) {
-    console.error(
-      "Error in taskGetAllService:",
-      error.message
-    );
-
-    return {
-      statuscode: 500,
-      data: null,
-    };
+    console.error("Error in taskGetAllService:", error);
+    return { statuscode: 500, data: null, error: error.message };
   }
 }
-
 // ============================================================
 // FILTER TASKS
 // ============================================================

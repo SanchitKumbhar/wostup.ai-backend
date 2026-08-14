@@ -1,4 +1,5 @@
 const { Sprint, WorkspaceMember } = require("../models/index");
+const { resolveProjectId } = require("../utils/resolveProject");
 
 async function createSprintService(payload, userId) {
     const { workspaceId, projectId, name, goal, startDate, endDate, status } = payload;
@@ -53,12 +54,27 @@ async function getSprintByIdService(sprintId) {
     }
     return { statuscode: 200, data };
 }
-
 async function getAllSprintsService(projectId) {
-    const data = await Sprint.find({ projectId, deletedAt: null }).sort({ startDate: 1 });
-    return { statuscode: 200, data };
-}
+  try {
+    const resolvedId = await resolveProjectId(projectId);
+    if (!resolvedId) {
+      return { statuscode: 404, data: null, error: "Project not found" };
+    }
 
+    const sprints = await Sprint.find({
+      projectId: resolvedId,
+      deletedAt: null,
+    })
+      .populate("createdBy", "name email avatar")
+      .sort({ startDate: 1 })
+      .lean();
+
+    return { statuscode: 200, data: sprints };
+  } catch (error) {
+    console.error("Error in getAllSprintsService:", error);
+    return { statuscode: 500, data: null, error: error.message };
+  }
+}
 async function deleteSprintService(sprintId, userId) {
     const sprint = await Sprint.findById(sprintId, { createdBy: 1 });
     if (!sprint) {
