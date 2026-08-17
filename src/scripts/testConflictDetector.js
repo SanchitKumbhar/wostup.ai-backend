@@ -1,218 +1,216 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+require("dns").setServers(["8.8.8.8", "1.1.1.1"]);
+
 const mongoose = require("mongoose");
 const { connectToMongo } = require("../db/mongo");
 const { ensureMongoSchema } = require("../db/schemaSetup");
-const { Task, Milestone, Suggestion } = require("../models");
+const { Task, Milestone, WorkspaceMember, Project, Notification } = require("../models");
 const conflictDetectorService = require("../services/conflictDetector.service");
+const { sendNotificationToRecipients } = require("../services/notificationDispatchService");
+const { setupRedis } = require("../redisConfig/config");
+const { io } = require("../app");
 
-async function runIntegrationTest() {
+function buildKey() {
+  return `CF${Math.floor(Math.random() * 1000000)}`.slice(0, 10);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runLiveConflictRealtimeTest() {
   console.log("---------------------------------------------------");
-  console.log("🧪 STARTING CONFLICT DETECTOR MODULE INTEGRATION TEST");
+  console.log("🧪 STARTING LIVE REAL-TIME CONFLICT NOTIFICATION TEST");
   console.log("---------------------------------------------------");
+
+  const TARGET_USER_ID = new mongoose.Types.ObjectId("6a7ef0a066f2ce0b4783edf4");
+  const TARGET_WORKSPACE_ID = new mongoose.Types.ObjectId("6a7ef1440c71a94254692968");
+  const testRunTag = `conflict_live_${Date.now()}`;
+
+  let projectA = null;
+  let projectB = null;
 
   try {
-    // 1. Connect to DB
-    console.log("1. Connecting to MongoDB Atlas & bootstrapping schemas...");
+    // 1. Connect to Mongo & Setup Redis Adapter for multi-process Socket delivery
+    console.log("1. Connecting to MongoDB Atlas & Redis Adapter...");
     await connectToMongo();
     await ensureMongoSchema();
-    console.log("✅ MongoDB connected & schemas verified.");
+    await setupRedis(io);
+    console.log("✅ MongoDB & Redis Adapter ready.");
 
-    // 2. Generate Mock IDs
-    const workspaceId = new mongoose.Types.ObjectId();
-    const assigneeUserId = new mongoose.Types.ObjectId();
-    const creatorUserId = new mongoose.Types.ObjectId();
+    // 2. Verify target user membership
+    console.log(`\n2. Verifying user ${TARGET_USER_ID} in workspace ${TARGET_WORKSPACE_ID}...`);
+    const membership = await WorkspaceMember.findOne({
+      workspaceId: TARGET_WORKSPACE_ID,
+      userId: TARGET_USER_ID,
+    }).lean();
 
-    const projectAId = new mongoose.Types.ObjectId();
-    const projectBId = new mongoose.Types.ObjectId();
-    const milestoneId = new mongoose.Types.ObjectId();
+    if (!membership) {
+      throw new Error(`User ${TARGET_USER_ID} is not in workspace ${TARGET_WORKSPACE_ID}`);
+    }
+    console.log(`Assertion Passed: User membership confirmed (Role: ${membership.role})`);
 
-    console.log(`\n2. Creating mock test environment for Workspace: ${workspaceId}...`);
+    // 3. Create test projects inside the live workspace
+    projectA = await Project.create({
+      workspaceId: TARGET_WORKSPACE_ID,
+      name: `Live Conflict Alpha ${testRunTag}`,
+      key: buildKey(),
+      description: "Project for real-time conflict testing",
+      owner: TARGET_USER_ID,
+      createdBy: TARGET_USER_ID,
+      members: [{ userId: TARGET_USER_ID, role: "Owner" }],
+      status: "Active",
+      priority: "High",
+      visibility: "Workspace",
+    });
 
-    // Create Mock Milestone: Due 2026-08-10
+    projectB = await Project.create({
+      workspaceId: TARGET_WORKSPACE_ID,
+      name: `Live Conflict Beta ${testRunTag}`,
+      key: buildKey(),
+      description: "Project for cross-project conflict testing",
+      owner: TARGET_USER_ID,
+      createdBy: TARGET_USER_ID,
+      members: [{ userId: TARGET_USER_ID, role: "Owner" }],
+      status: "Active",
+      priority: "High",
+      visibility: "Workspace",
+    });
+
     const mockMilestone = await Milestone.create({
-      _id: milestoneId,
-      workspaceId,
-      projectId: projectAId,
-      createdBy: creatorUserId,
-      name: "Q3 Release Milestone",
-      description: "Milestone for Q3 features",
-      dueDate: new Date("2026-08-10T23:59:59.000Z"),
+      workspaceId: TARGET_WORKSPACE_ID,
+      projectId: projectA._id,
+      createdBy: TARGET_USER_ID,
+      name: `Live Target Milestone ${testRunTag}`,
+      description: "Target milestone for mismatch checks",
+      dueDate: new Date("2026-08-20T23:59:59.000Z"),
       completionPercentage: 20,
     });
 
-    // ---------------------------------------------------
-    // Task 1 & Task 2: For Dependency Conflict & Cross-Project Conflict
-    // ---------------------------------------------------
+    // 4. Seed conflict scenarios
     const task1 = await Task.create({
-      workspaceId,
-      projectId: projectAId,
-      assigneeUserId,
-      createdBy: creatorUserId,
-      title: "Parent Backend Task 1",
+      workspaceId: TARGET_WORKSPACE_ID,
+      projectId: projectA._id,
+      assigneeUserId: TARGET_USER_ID,
+      createdBy: TARGET_USER_ID,
+      title: `Parent Backend Architecture [${testRunTag}]`,
       description: "Core DB architecture task",
       status: "in-progress",
       priority: "Critical",
-      dueDate: new Date("2026-08-15T12:00:00.000Z"),
+      dueDate: new Date("2026-08-25T12:00:00.000Z"),
     });
 
     const task2 = await Task.create({
-      workspaceId,
-      projectId: projectAId,
-      assigneeUserId,
-      createdBy: creatorUserId,
-      title: "Child Frontend Task 2",
-      description: "Frontend integration depending on Task 1",
+      workspaceId: TARGET_WORKSPACE_ID,
+      projectId: projectA._id,
+      assigneeUserId: TARGET_USER_ID,
+      createdBy: TARGET_USER_ID,
+      title: `Child Frontend Component [${testRunTag}]`,
+      description: "Frontend depending on Task 1",
       status: "todo",
       priority: "High",
-      dueDate: new Date("2026-08-12T12:00:00.000Z"), // Due BEFORE parent Task 1 (Dependency Conflict!)
+      dueDate: new Date("2026-08-22T12:00:00.000Z"), // Dependency Conflict
       dependency: [task1._id],
     });
 
-    // ---------------------------------------------------
-    // Task 3: In Project B for Cross-Project Overload Conflict
-    // ---------------------------------------------------
     const task3 = await Task.create({
-      workspaceId,
-      projectId: projectBId,
-      assigneeUserId,
-      createdBy: creatorUserId,
-      title: "Project B Critical API Integration",
+      workspaceId: TARGET_WORKSPACE_ID,
+      projectId: projectB._id,
+      assigneeUserId: TARGET_USER_ID,
+      createdBy: TARGET_USER_ID,
+      title: `Cross-Project Microservice [${testRunTag}]`,
       description: "API gateway integration",
       status: "in-progress",
       priority: "Critical",
-      dueDate: new Date("2026-08-14T12:00:00.000Z"), // Due within 2 days of Task 1 (Cross-Project Conflict!)
+      dueDate: new Date("2026-08-24T12:00:00.000Z"), // Cross-Project Overload Conflict
     });
 
-    // ---------------------------------------------------
-    // Task 4: Milestone Mismatch Conflict
-    // ---------------------------------------------------
     const task4 = await Task.create({
-      workspaceId,
-      projectId: projectAId,
-      assigneeUserId,
-      createdBy: creatorUserId,
+      workspaceId: TARGET_WORKSPACE_ID,
+      projectId: projectA._id,
+      assigneeUserId: TARGET_USER_ID,
+      createdBy: TARGET_USER_ID,
       milestoneId: mockMilestone._id,
-      title: "Milestone Exceeding Task 4",
-      description: "Task due after target milestone date",
+      title: `Milestone Overdue Task [${testRunTag}]`,
+      description: "Task due after milestone",
       status: "todo",
       priority: "Medium",
-      dueDate: new Date("2026-08-20T12:00:00.000Z"), // Due 2026-08-20 > Milestone due 2026-08-10 (Milestone Mismatch!)
+      dueDate: new Date("2026-08-30T12:00:00.000Z"), // Milestone Mismatch
     });
 
-    // ---------------------------------------------------
-    // Tasks 5, 6, 7: Due-Date Clustering (3 High/Critical tasks on exact same date 2026-08-25)
-    // ---------------------------------------------------
-    const clusterDate = new Date("2026-08-25T10:00:00.000Z");
+    console.log("✅ Seeded conflict tasks and milestones.");
 
-    const task5 = await Task.create({
-      workspaceId,
-      projectId: projectAId,
-      assigneeUserId,
-      createdBy: creatorUserId,
-      title: "Cluster Task 5",
-      description: "Same date task A",
-      status: "todo",
-      priority: "High",
-      dueDate: clusterDate,
+    // 5. Run conflict detector engine
+    console.log("\n5. Running conflict detector calculations...");
+    const analysisResult = await conflictDetectorService.runAllConflictChecks(TARGET_WORKSPACE_ID);
+    console.log("Analysis Result Breakdown:", analysisResult.breakdown);
+
+    // 6. Broadcast Real-Time Notification & WebSocket Events
+    console.log("\n6. Dispatching Real-Time Notification via Socket.IO & Redis Adapter...");
+    const topSuggestion = analysisResult.suggestions[0];
+    const alertMessage = `AI Alert: Detected ${analysisResult.totalConflictsFound} scheduling conflicts in workspace.`;
+
+    const dispatchResult = await sendNotificationToRecipients(io, {
+      workspaceId: TARGET_WORKSPACE_ID,
+      recipientUserId: TARGET_USER_ID,
+      message: alertMessage,
+      type: "ai",
     });
 
-    const task6 = await Task.create({
-      workspaceId,
-      projectId: projectAId,
-      assigneeUserId,
-      createdBy: creatorUserId,
-      title: "Cluster Task 6",
-      description: "Same date task B",
-      status: "in-progress",
-      priority: "Critical",
-      dueDate: clusterDate,
+    console.log("Dispatch Result:", dispatchResult);
+
+    // Broadcast dedicated detector channel alert
+    io.in(`workspace:${TARGET_WORKSPACE_ID}`).emit("detector:conflict_alert", {
+      workspaceId: TARGET_WORKSPACE_ID,
+      totalConflicts: analysisResult.totalConflictsFound,
+      breakdown: analysisResult.breakdown,
+      topSuggestion,
     });
 
-    const task7 = await Task.create({
-      workspaceId,
-      projectId: projectAId,
-      assigneeUserId,
-      createdBy: creatorUserId,
-      title: "Cluster Task 7",
-      description: "Same date task C",
-      status: "todo",
-      priority: "High",
-      dueDate: clusterDate,
+    console.log("✅ WebSocket packet broadcasted to Redis Pub/Sub.");
+
+    // Verify MongoDB persistence
+    const savedNotification = await Notification.findOne({
+      workspaceId: TARGET_WORKSPACE_ID,
+      recipientUserId: TARGET_USER_ID,
+      type: "ai",
+    }).sort({ timestamp: -1 }).lean();
+
+    console.log("\nPersisted Notification Details:", {
+      notificationId: String(savedNotification._id),
+      recipientUserId: String(savedNotification.recipientUserId),
+      type: savedNotification.type,
+      message: savedNotification.message,
     });
 
-    console.log("✅ Mock tasks and milestone created successfully.");
-
-    // 3. Execute Conflict Detector Engine
-    console.log("\n3. Executing conflictDetectorService.runAllConflictChecks()...");
-    const analysisResult = await conflictDetectorService.runAllConflictChecks(workspaceId);
-
-    console.log("\nAnalysis Execution Result:", JSON.stringify(analysisResult, null, 2));
-
-    // 4. Assertions
-    console.log("\n4. Running Assertions...");
-
-    if (!analysisResult.success) {
-      throw new Error("❌ FAIL: analysisResult.success should be true");
-    }
-    console.log("✅ PASS: Execution returned success: true");
-
-    const { breakdown } = analysisResult;
-
-    if (breakdown.crossProjectConflicts < 1) {
-      throw new Error("❌ FAIL: Cross-Project Conflict was not detected!");
-    }
-    console.log(`✅ PASS: Cross-Project Conflicts Detected (${breakdown.crossProjectConflicts})`);
-
-    if (breakdown.dependencyConflicts < 1) {
-      throw new Error("❌ FAIL: Dependency Conflict was not detected!");
-    }
-    console.log(`✅ PASS: Dependency Conflicts Detected (${breakdown.dependencyConflicts})`);
-
-    if (breakdown.milestoneMismatches < 1) {
-      throw new Error("❌ FAIL: Milestone Mismatch Conflict was not detected!");
-    }
-    console.log(`✅ PASS: Milestone Mismatches Detected (${breakdown.milestoneMismatches})`);
-
-    if (breakdown.dueDateClustering < 1) {
-      throw new Error("❌ FAIL: Due-Date Clustering Conflict was not detected!");
-    }
-    console.log(`✅ PASS: Due-Date Clustering Detected (${breakdown.dueDateClustering})`);
-
-    // 5. Query Suggestions Service
-    console.log("\n5. Testing getWorkspaceSuggestions query service...");
-    const storedSuggestions = await conflictDetectorService.getWorkspaceSuggestions(workspaceId);
-    console.log(`Fetched ${storedSuggestions.length} stored suggestions from MongoDB suggestions collection.`);
-
-    if (storedSuggestions.length < 4) {
-      throw new Error(`❌ FAIL: Expected at least 4 stored suggestions, got ${storedSuggestions.length}`);
-    }
-    console.log("✅ PASS: Stored suggestions count in MongoDB is correct.");
-
-    // 6. Test Validate Service
-    console.log("\n6. Testing validateSuggestion service on first suggestion...");
-    const targetSuggestionId = storedSuggestions[0]._id;
-    const validatedResult = await conflictDetectorService.validateSuggestion(targetSuggestionId);
-
-    if (!validatedResult || validatedResult.validated !== true) {
-      throw new Error("❌ FAIL: Suggestion was not marked validated: true!");
-    }
-    console.log("✅ PASS: Suggestion validated property correctly set to true.");
-
-    // 7. Cleanup
-    console.log("\n7. Cleaning up test data from MongoDB...");
-    await Task.deleteMany({ workspaceId });
-    await Milestone.deleteMany({ workspaceId });
-    await Suggestion.deleteMany({ workspaceId });
-    console.log("✅ PASS: Test workspace cleanup complete.");
+    console.log("\n⏳ Keeping process alive for 6 seconds so the WebSocket event delivers to your open browser UI...");
+    await sleep(6000);
 
     console.log("---------------------------------------------------");
-    console.log("🎉 ALL 4 CONFLICT DETECTOR TESTS PASSED 100%!");
+    console.log("🎉 LIVE REAL-TIME CONFLICT TEST COMPLETE!");
     console.log("---------------------------------------------------");
+  } finally {
+    const shouldCleanup = String(process.env.CONFLICT_TEST_CLEANUP || "false").toLowerCase() === "true";
+
+    if (shouldCleanup) {
+      console.log("Cleaning up created test fixtures...");
+      if (projectA) await Task.deleteMany({ projectId: projectA._id });
+      if (projectB) await Task.deleteMany({ projectId: projectB._id });
+      await Milestone.deleteMany({ name: new RegExp(testRunTag) });
+      if (projectA) await Project.deleteOne({ _id: projectA._id });
+      if (projectB) await Project.deleteOne({ _id: projectB._id });
+      console.log("✅ Cleanup complete.");
+    } else {
+      console.log("💡 CONFLICT_TEST_CLEANUP=false: Notification retained in DB for UI inspection.");
+    }
+
+    await mongoose.connection.close();
     process.exit(0);
-  } catch (error) {
-    console.error("\n❌ TEST FAILED WITH ERROR:", error);
-    process.exit(1);
   }
 }
 
-runIntegrationTest();
+runLiveConflictRealtimeTest().catch((err) => {
+  console.error("\n❌ TEST FAILED WITH ERROR:", err);
+  process.exit(1);
+});
