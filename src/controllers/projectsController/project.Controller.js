@@ -1,6 +1,6 @@
 const async_handler = require("express-async-handler");
 const ProjectService = require("../../services/projectService");
-const ProjectStatService = require("../../services/projectStatService");
+const { getProjectHealthService } = require("../../services/projectHealthService");
 
 const createProjectController = async_handler(async (req, res) => {
   if (!req.body) {
@@ -189,22 +189,31 @@ const deleteProjectController = async_handler(async (req, res) => {
   });
 });
 
-// Restored Project Stats Controller
+// Project Stats / Health Controller
 const getProjectStatsController = async_handler(async (req, res) => {
   const { projectId } = req.params;
+  const { timezone } = req.query;
+
   if (!projectId) {
-    return res.status(400).json({ message: "project id not provided" });
+    return res.status(400).json({ 
+      success: false, 
+      message: "project id not provided" 
+    });
   }
 
-  const stats = await ProjectStatService.getProjectStats(projectId);
-  if (!stats) {
-    return res.status(404).json({ message: "project stats not found" });
+  const result = await getProjectHealthService(projectId, { timezone });
+
+  if (result.status !== 200) {
+    return res.status(result.status || 500).json({
+      success: false,
+      message: result.message || "project stats not found",
+    });
   }
 
   return res.status(200).json({
     success: true,
     message: "project stats fetched",
-    data: stats,
+    data: result.data,
   });
 });
 

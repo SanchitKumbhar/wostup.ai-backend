@@ -17,8 +17,8 @@ router.put("/v1/updateProjectById/:projectId", authMiddleware, updateProjectCont
 router.delete("/v1/deleteProjectById/:projectId", authMiddleware, deleteProjectController);
 
 // Project Stats Route
+// router.get("/v1/projectStats/:projectId", getProjectStatsController);
 router.get("/v1/stats/:projectId", getProjectStatsController);
-router.get("/v1/getProjectStats/:projectId", getProjectStatsController);
 
 // Read Routes
 router.get("/v1/getProjects/:workspaceId", getAllProjectController);

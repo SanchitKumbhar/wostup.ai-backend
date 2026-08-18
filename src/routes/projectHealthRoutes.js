@@ -3,6 +3,6 @@ const projectHealthController = require("../controllers/ExecutionController/proj
 
 const router = express.Router();
 
-router.get("/v1/:workspaceId", projectHealthController);
+router.get("/v1/health/:projectId", projectHealthController);
 
 module.exports = router;

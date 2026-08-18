@@ -54,7 +54,7 @@ app.use("/api/tasks", taskRoutes);
 app.use("/api/task-health", taskHealthRoutes);
 app.use("/api/comments", commentRoutes);
 app.use("/api/workspaces", workspaceRoutes);
-app.use("/api/projectHealth", projectHealthRoutes);
+app.use("/api/project-health", projectHealthRoutes);
 app.use("/api/team-load", teamLoadRoutes);
 app.use("/api/sessions", sessionsRoutes);
 app.use("/api/conflicts", conflictDetectorRoutes);

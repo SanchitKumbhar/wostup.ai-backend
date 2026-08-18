@@ -38,7 +38,7 @@ module.exports = {
   SecurityLog: require("./securityLogs.model"),
   FailedQueueJob: require("./failedQueueJobs.model"),
   Suggestion: require("./suggestions.model"),
-
+  task_activities:require("./task_activities.model"),
   GithubInstallation: require("./githubInstallations.model"),
   GithubRepo: require("./githubRepos.model"),
   GithubPullRequest: require("./githubPullRequests.model"),

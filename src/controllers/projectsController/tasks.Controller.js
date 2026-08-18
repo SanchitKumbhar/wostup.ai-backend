@@ -1,17 +1,19 @@
 const async_handler = require("express-async-handler");
 const {
-    createTaskService,
-    updateTaskService,
-    taskDeleteService,
-    taskGetByIdService,
-    taskGetAllService,
-    taskFilterService,
-    createTaskMadeByAI
+  createTaskService,
+  updateTaskService,
+  taskDeleteService,
+  taskGetByIdService,
+  taskGetAllService,
+  taskFilterService,
+  createTaskMadeByAI,
 } = require("../../services/taskService");
 const conflictDetectorService = require("../../services/conflictDetector.service");
-
+const { recordTaskActivity } = require("../../services/taskActivityService");
+const { Task } = require("../../models/index"); // Adjust path to your models index if needed
 
 // controllers/projectsController/tasks.Controller.js
+
 const createTaskController = async_handler(async (req, res) => {
   if (!req.body) {
     return res.status(400).json({ message: "body not provided" });
@@ -29,6 +31,8 @@ const createTaskController = async_handler(async (req, res) => {
     milestoneId,
     dueDate,
     dependency,
+    storyPoints,
+    points,
     userId: bodyUserId,
   } = req.body;
 
@@ -51,18 +55,31 @@ const createTaskController = async_handler(async (req, res) => {
     milestoneId,
     dueDate,
     dependency,
-    creatorUserId
+    creatorUserId,
+    storyPoints || points
   );
 
-  if (statuscode == 201) {
+  if (statuscode === 201 && data) {
+    // 1. Audit / Burndown hook: CREATED
+    recordTaskActivity({
+      workspaceId: data.workspaceId || workspaceId,
+      projectId: data.projectId || projectId,
+      taskId: data._id,
+      userId: creatorUserId,
+      action: "CREATED",
+      newTask: data,
+    }).catch((err) => console.error("Error recording CREATED activity:", err));
+
+    // 2. Conflict detector
     const wsId = data?.workspaceId || workspaceId;
     if (wsId) {
       conflictDetectorService.scheduleDebouncedConflictCheck(wsId);
     }
+
     return res.status(201).json({ message: "task created", data: data });
   }
 
-  if (statuscode == 403) {
+  if (statuscode === 403) {
     return res.status(403).json({ message: "only workspace members can create task" });
   }
 
@@ -70,55 +87,145 @@ const createTaskController = async_handler(async (req, res) => {
 });
 
 const updateTaskController = async_handler(async (req, res) => {
-    if (!req.body || !req.params.taskId) {
-        return res.status(400).json({ messgae: "body or task id not provided" });
+  const { taskId } = req.params;
+  const userId = req.auth?.userId || req.user?._id?.toString() || req.body?.userId;
 
+  if (!req.body || !taskId) {
+    return res.status(400).json({ message: "body or task id not provided" });
+  }
+
+  // Fetch current task state before updating to calculate deltas accurately
+  const oldTask = await Task.findById(taskId).lean();
+
+  const { statuscode, data } = await updateTaskService(
+    taskId,
+    userId,
+    req.body
+  );
+
+  if (statuscode === 200 && data) {
+    const updatedTask = data;
+
+    // 1. Audit / Burndown hooks
+    if (oldTask) {
+      const oldStatus = oldTask.status;
+      const newStatus = updatedTask.status;
+      const oldPoints = Number(oldTask.storyPoints || oldTask.points || 1);
+      const newPoints = Number(updatedTask.storyPoints || updatedTask.points || 1);
+
+      // Track Status Transitions (e.g., Todo -> Done, Done -> In Progress)
+      if (oldStatus !== newStatus) {
+        recordTaskActivity({
+          workspaceId: updatedTask.workspaceId,
+          projectId: updatedTask.projectId,
+          taskId: updatedTask._id,
+          userId,
+          action: "STATUS_UPDATED",
+          oldTask,
+          newTask: updatedTask,
+        }).catch((err) => console.error("Error recording STATUS_UPDATED activity:", err));
+      }
+
+      // Track Story Point / Scope Changes
+      if (oldPoints !== newPoints) {
+        recordTaskActivity({
+          workspaceId: updatedTask.workspaceId,
+          projectId: updatedTask.projectId,
+          taskId: updatedTask._id,
+          userId,
+          action: "POINTS_UPDATED",
+          oldTask,
+          newTask: updatedTask,
+        }).catch((err) => console.error("Error recording POINTS_UPDATED activity:", err));
+      }
     }
-    console.log(req.body);
-    const { statuscode, data } = await updateTaskService(
-        req.params.taskId,
-        req.auth.userId,
-        req.body
-    );
 
-    if (statuscode == 200) {
-        // Trigger debounced conflict detection asynchronously
-        const wsId = data?.workspaceId || req.body?.workspaceId;
-        if (wsId) {
-            conflictDetectorService.scheduleDebouncedConflictCheck(wsId);
-        }
-        return res.status(200).json({ message: "task updated", data: data });
+    // 2. Conflict detector
+    const wsId = data?.workspaceId || req.body?.workspaceId;
+    if (wsId) {
+      conflictDetectorService.scheduleDebouncedConflictCheck(wsId);
     }
 
-    if (statuscode == 403) {
-        return res.status(403).json({ message: "only creator can update task" });
+    return res.status(200).json({ message: "task updated", data: data });
+  }
+
+  if (statuscode === 403) {
+    return res.status(403).json({ message: "only creator can update task" });
+  }
+
+  if (statuscode === 404) {
+    return res.status(404).json({ message: "task not found" });
+  }
+
+  return res.status(400).json({ message: "task not updated" });
+});
+
+const deleteTaskController = async_handler(async (req, res) => {
+  const { taskId } = req.params;
+  const userId = req.auth?.userId || req.user?._id?.toString();
+
+  if (!taskId) {
+    return res.status(400).json({ message: "Task Id not provided" });
+  }
+
+  // Fetch task state before deletion to record point reductions
+  const taskToDelete = await Task.findById(taskId).lean();
+
+  const { statuscode, data } = await taskDeleteService(taskId, userId);
+
+  if (statuscode === 200) {
+    // Audit / Burndown hook: DELETED
+    if (taskToDelete) {
+      recordTaskActivity({
+        workspaceId: taskToDelete.workspaceId,
+        projectId: taskToDelete.projectId,
+        taskId: taskToDelete._id,
+        userId,
+        action: "DELETED",
+        oldTask: taskToDelete,
+      }).catch((err) => console.error("Error recording DELETED activity:", err));
     }
 
-    if (statuscode == 404) {
-        return res.status(404).json({ message: "task not found" });
-    }
+    return res.status(200).json({
+      message: "Task deleted",
+      data: data,
+    });
+  }
 
-    return res.status(400).json({ message: "task not updated" });
+  if (statuscode === 403) {
+    return res.status(403).json({
+      message: "only creator can delete task",
+    });
+  }
+
+  if (statuscode === 404) {
+    return res.status(404).json({
+      message: "Task not found",
+    });
+  }
+
+  return res.status(400).json({
+    message: "Task not deleted",
+  });
 });
 
 const getTaskByIdController = async_handler(async (req, res) => {
-    if (!req.params.taskId) {
-        return res.status(400).json({
-            "message": "Task Id not provided"
-        });
-    }
-    const { statuscode, data } = await taskGetByIdService(req.params.taskId);
-    if (statuscode == 404) {
-        return res.status(404).json({
-            "message": "Task not found"
-        })
-    }
-    return res.status(200).json({
-        "message": data
-    })
-})
+  if (!req.params.taskId) {
+    return res.status(400).json({ message: "Task Id not provided" });
+  }
+
+  const { statuscode, data } = await taskGetByIdService(req.params.taskId);
+
+  if (statuscode === 404) {
+    return res.status(404).json({ message: "Task not found" });
+  }
+
+  return res.status(200).json({ message: data });
+});
+
 const getAllTaskController = async_handler(async (req, res) => {
   const { projectId } = req.params;
+
   if (!projectId) {
     return res.status(400).json({ message: "projectId param is required" });
   }
@@ -139,77 +246,11 @@ const getAllTaskController = async_handler(async (req, res) => {
     data: [],
   });
 });
-const deleteTaskController = async_handler(async (req, res) => {
-    if (!req.params.taskId) {
-        return res.status(400).json({
-            "message": "Task Id not provided"
-        });
-    }
-    const { statuscode, data } = await taskDeleteService(req.params.taskId, req.auth.userId);
-
-    if (statuscode == 200) {
-        return res.status(200).json({
-            message: "Task deleted",
-            data: data
-        });
-
-    }
-
-    if (statuscode == 403) {
-        return res.status(403).json({
-            message: "only creator can delete task"
-        });
-    }
-
-    if (statuscode == 404) {
-        return res.status(404).json({
-            message: "Task not found"
-        });
-    }
-
-    return res.status(400).json({
-        message: "Task not deleted"
-    });
-
-});
-
-
-
-// filter api for task:
-// const filterTaskController = async_handler(async (req, res) => {
-//     const { status, userid } = req.params;
-//     if (!status || !userid) {
-//         return res.status(400).json({ message: "status or user id not provided" });
-//     }
-
-
-
-//     const { statuscode, data } = await taskFilterService(status, userid);
-//     return res.status(statuscode || 200).json({ data: data });
-// })
-
-// const createTaskMadeByAIController=async_handler(async(req,res)=>{
-//     const {action,wokspaceId,projectId,userId,tasks}=req.body;
-//     if(action==1){
-//        const status= createTaskMadeByAI(workspaceId,userId,tasks,projectId);
-//     }
-
-//     if(status==200){
-//         return res.status(200).json("Tasks Created By AI");
-//     }
-//     if(status==500){
-//         return res.status(500).json("Internal  Server Erro");
-//     }
-
-// });
 
 module.exports = {
-    createTaskController,
-    updateTaskController,
-    getTaskByIdController,
-    getAllTaskController,
-    deleteTaskController,
-    // filterTaskController
-};
-
-
+  createTaskController,
+  updateTaskController,
+  getTaskByIdController,
+  getAllTaskController,
+  deleteTaskController,
+};  
