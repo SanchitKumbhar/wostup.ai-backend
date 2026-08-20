@@ -1,3 +1,6 @@
+
+const dns = require("dns");
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 const express = require("express");
 const cors = require("cors");
 const http = require("http");
@@ -24,7 +27,6 @@ const sprintRoutes = require("./routes/sprintRoutes");
 const githubRoutes = require("./routes/github.routes");
 const githubWebhookRoutes = require("./routes/githubWebhook.routes");
 
-require("dns").setServers(["8.8.8.8", "1.1.1.1"]);
 
 const app = express();
 app.use(cors());

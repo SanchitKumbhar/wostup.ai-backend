@@ -59,7 +59,9 @@ const taskSchema = new mongoose.Schema(
   }
 );
 
-// Indexes
+// Production Indexes
+taskSchema.index({ workspaceId: 1, deletedAt: 1, createdAt: -1 });
+taskSchema.index({ workspaceId: 1, projectId: 1, deletedAt: 1 });
 taskSchema.index({ workspaceId: 1, status: 1, dueDate: 1 });
 taskSchema.index({ workspaceId: 1, assigneeUserId: 1, status: 1 });
 taskSchema.index({ workspaceId: 1, projectId: 1, milestoneId: 1 });
