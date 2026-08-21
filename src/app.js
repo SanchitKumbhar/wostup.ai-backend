@@ -26,6 +26,7 @@ const epicRoutes = require("./routes/epicRoutes");
 const sprintRoutes = require("./routes/sprintRoutes");
 const githubRoutes = require("./routes/github.routes");
 const githubWebhookRoutes = require("./routes/githubWebhook.routes");
+const { initInviteSocket } = require("./sockets/inviteSocket");
 
 
 const app = express();
@@ -44,7 +45,10 @@ app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
+// Path: src/server.js (or src/app.js)
 
+// Right where your other socket modules are attached (e.g., notificationSocket, updateSocket):
+initInviteSocket(io);
 // Routes
 app.use("/", healthRoutes);
 app.use("/api/auth", authRoutes);

@@ -1,3 +1,4 @@
+// Path: src/services/projectService.js
 const { Project, WorkspaceMember } = require("../models/index");
 const mongoose = require("mongoose");
 const { resolveProjectId } = require("../utils/resolveProject");
@@ -37,15 +38,16 @@ async function projectCreateService(
       });
 
       if (!isMember) {
-        return { statuscode: 403, data: null };
+        return { statuscode: 403, data: null, error: "Unauthorized" };
       }
     }
 
-    const defaultMembers = members && Array.isArray(members) && members.length > 0
-      ? members
-      : userId
-      ? [{ userId: new mongoose.Types.ObjectId(userId), role: "Owner", joinedAt: new Date() }]
-      : [];
+    const defaultMembers =
+      members && Array.isArray(members) && members.length > 0
+        ? members
+        : userId
+        ? [{ userId: new mongoose.Types.ObjectId(userId), role: "Owner", joinedAt: new Date() }]
+        : [];
 
     const projectData = {
       workspaceId: new mongoose.Types.ObjectId(workspaceId),
@@ -79,7 +81,7 @@ async function projectCreateService(
 }
 
 /**
- * Update an existing Project by ID (Supports Partial Updates)
+ * Update an existing Project by ID
  */
 async function projectUpdateService(projectId, userId, updateBody) {
   try {
@@ -97,7 +99,6 @@ async function projectUpdateService(projectId, userId, updateBody) {
       return { statuscode: 404, data: null, error: "Project not found" };
     }
 
-    // Authorization check: If userId is provided, ensure creator/owner or workspace member
     if (userId) {
       const isCreatorOrOwner =
         (project.createdBy && project.createdBy.toString() === userId.toString()) ||
@@ -107,7 +108,7 @@ async function projectUpdateService(projectId, userId, updateBody) {
         const isMember = await WorkspaceMember.findOne({
           workspaceId: project.workspaceId,
           userId: new mongoose.Types.ObjectId(userId),
-          role: { $in: ["owner", "admin", "member"] },
+          role: { $in: ["owner", "admin"] },
         });
 
         if (!isMember) {
@@ -116,7 +117,6 @@ async function projectUpdateService(projectId, userId, updateBody) {
       }
     }
 
-    // Whitelist and sanitize updatable fields only
     const updatePayload = {};
 
     if (updateBody.name !== undefined) updatePayload.name = String(updateBody.name).trim();
@@ -127,12 +127,10 @@ async function projectUpdateService(projectId, userId, updateBody) {
     if (updateBody.visibility !== undefined) updatePayload.visibility = updateBody.visibility;
     if (updateBody.progress !== undefined) updatePayload.progress = Number(updateBody.progress);
 
-    // Normalize projectType enum
     if (updateBody.projectType !== undefined) {
       updatePayload.projectType = String(updateBody.projectType).toLowerCase();
     }
 
-    // Normalize TitleCase status enum
     if (updateBody.status !== undefined) {
       const statusMap = {
         planning: "Planning",
@@ -146,7 +144,6 @@ async function projectUpdateService(projectId, userId, updateBody) {
       updatePayload.status = statusMap[normalizedStatus.toLowerCase()] || normalizedStatus;
     }
 
-    // Normalize TitleCase priority enum
     if (updateBody.priority !== undefined) {
       const priorityMap = {
         low: "Low",
@@ -158,7 +155,6 @@ async function projectUpdateService(projectId, userId, updateBody) {
       updatePayload.priority = priorityMap[normalizedPriority.toLowerCase()] || normalizedPriority;
     }
 
-    // Parse Dates safely
     if (updateBody.startDate !== undefined) {
       updatePayload.startDate = updateBody.startDate ? new Date(updateBody.startDate) : null;
     }
@@ -169,7 +165,6 @@ async function projectUpdateService(projectId, userId, updateBody) {
       updatePayload.completedAt = updateBody.completedAt ? new Date(updateBody.completedAt) : null;
     }
 
-    // Arrays & Objects
     if (updateBody.tags !== undefined) updatePayload.tags = Array.isArray(updateBody.tags) ? updateBody.tags : [];
     if (updateBody.techStack !== undefined) updatePayload.techStack = Array.isArray(updateBody.techStack) ? updateBody.techStack : [];
     if (updateBody.settings !== undefined && typeof updateBody.settings === "object") {
@@ -179,7 +174,6 @@ async function projectUpdateService(projectId, userId, updateBody) {
       updatePayload.members = updateBody.members;
     }
 
-    // Audit fields
     updatePayload.lastActivityAt = new Date();
     if (userId && mongoose.Types.ObjectId.isValid(userId)) {
       updatePayload.lastUpdatedBy = new mongoose.Types.ObjectId(userId);
@@ -199,12 +193,12 @@ async function projectUpdateService(projectId, userId, updateBody) {
 }
 
 /**
- * Get Project by ID or Key
+ * Get Project by ID or Key with Member Access Enforcement
  */
-async function projectGetByIdService(projectId) {
+async function projectGetByIdService(projectId, userId) {
   try {
     const resolvedId = await resolveProjectId(projectId);
-    if (!resolvedId) return null;
+    if (!resolvedId) return { statuscode: 404, data: null, error: "Project not found" };
 
     const project = await Project.findOne({
       _id: resolvedId,
@@ -215,33 +209,89 @@ async function projectGetByIdService(projectId) {
       .populate("members.userId", "name email avatar")
       .lean();
 
-    return project;
+    if (!project) {
+      return { statuscode: 404, data: null, error: "Project not found" };
+    }
+
+    if (userId) {
+      const isCreatorOrOwner =
+        (project.createdBy && (project.createdBy._id || project.createdBy).toString() === userId.toString()) ||
+        (project.owner && (project.owner._id || project.owner).toString() === userId.toString());
+
+      const isInMemberList =
+        project.members &&
+        project.members.some((m) => {
+          const memberId = m.userId?._id ? m.userId._id.toString() : m.userId ? m.userId.toString() : m.toString();
+          return memberId === userId.toString();
+        });
+
+      if (!isCreatorOrOwner && !isInMemberList) {
+        const isWsAdmin = await WorkspaceMember.findOne({
+          workspaceId: project.workspaceId,
+          userId: new mongoose.Types.ObjectId(userId),
+          role: { $in: ["owner", "admin"] },
+        });
+
+        if (!isWsAdmin) {
+          return { statuscode: 403, data: null, error: "Access denied. You are not a member of this project." };
+        }
+      }
+    }
+
+    return { statuscode: 200, data: project };
   } catch (error) {
     console.error("Error in projectGetByIdService:", error);
-    return null;
+    return { statuscode: 400, data: null, error: error.message };
   }
 }
 
 /**
- * Get all Projects for a Workspace
+ * Get all Projects for a Workspace (Filtered to Projects User Belongs To)
  */
-async function projectGetAllService(workspaceId) {
+async function projectGetAllService(workspaceId, userId) {
   try {
-    if (!mongoose.Types.ObjectId.isValid(workspaceId)) return null;
+    if (!mongoose.Types.ObjectId.isValid(workspaceId)) {
+      return { statuscode: 400, data: null, error: "Invalid workspaceId" };
+    }
 
-    const projects = await Project.find({
+    const query = {
       workspaceId: new mongoose.Types.ObjectId(workspaceId),
       deletedAt: null,
-    })
+    };
+
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      const wsMember = await WorkspaceMember.findOne({
+        workspaceId: new mongoose.Types.ObjectId(workspaceId),
+        userId: new mongoose.Types.ObjectId(userId),
+      });
+
+      if (!wsMember) {
+        return { statuscode: 403, data: null, error: "Not a member of this workspace" };
+      }
+
+      // If not workspace owner or admin, only show projects where the user is creator, owner, or in members array
+      if (wsMember.role !== "owner" && wsMember.role !== "admin") {
+        const uId = new mongoose.Types.ObjectId(userId);
+        query.$or = [
+          { createdBy: uId },
+          { owner: uId },
+          { "members.userId": uId },
+          { members: uId },
+        ];
+      }
+    }
+
+    const projects = await Project.find(query)
       .populate("owner", "name email avatar")
       .populate("createdBy", "name email avatar")
+      .populate("members.userId", "name email avatar")
       .sort({ createdAt: -1 })
       .lean();
 
-    return projects;
+    return { statuscode: 200, data: projects };
   } catch (error) {
     console.error("Error in projectGetAllService:", error);
-    return null;
+    return { statuscode: 400, data: null, error: error.message };
   }
 }
 
@@ -252,7 +302,7 @@ async function projectDeleteService(projectId, userId) {
   try {
     const resolvedId = await resolveProjectId(projectId);
     if (!resolvedId) {
-      return { statuscode: 404, data: null };
+      return { statuscode: 404, data: null, error: "Project not found" };
     }
 
     const project = await Project.findOne({
@@ -261,11 +311,19 @@ async function projectDeleteService(projectId, userId) {
     });
 
     if (!project) {
-      return { statuscode: 404, data: null };
+      return { statuscode: 404, data: null, error: "Project not found" };
     }
 
     if (userId && project.createdBy && project.createdBy.toString() !== userId.toString()) {
-      return { statuscode: 403, data: null };
+      const isWsAdmin = await WorkspaceMember.findOne({
+        workspaceId: project.workspaceId,
+        userId: new mongoose.Types.ObjectId(userId),
+        role: { $in: ["owner", "admin"] },
+      });
+
+      if (!isWsAdmin) {
+        return { statuscode: 403, data: null, error: "Only project creator or workspace admin can delete" };
+      }
     }
 
     await Project.updateOne(

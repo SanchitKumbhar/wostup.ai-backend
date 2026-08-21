@@ -1,30 +1,55 @@
-// full name
-// email
-// role
+// Path: src/controllers/teamMemberController/teamMemberInvite.Controller.js
+const async_handler = require("express-async-handler");
+const teamMemberInviteService = require("../../services/teamInviteService");
+const { emitInviteCreated } = require("../../sockets/inviteSocket");
 
-// reecieve the data ---> create service for email sending ----recieve the email 200 sent response ---->send response the client
+const sendTeamMailInvite = async_handler(async (req, res) => {
+  const { name, email, role, workspaceId } = req.body;
 
-const async_handler=require("express-async-handler");
-const teamMemberInviteService=require("../../services/teamInviteService");
+  // 1. Validation
+  if (!email || !name) {
+    return res.status(400).json({
+      success: false,
+      message: "Name and email are required to send an invitation.",
+    });
+  }
 
-const sendTeamMailInvite=async_handler(async(req,res)=>{
+  // 2. Extract sender info from authenticated user session
+  const invitedBy = req.user?.id || req.user?._id || null;
 
-    if(!req.body){
-        return res.status(400).json({message:"the request body not sent."});
-    }
+  // 3. Call invite service
+  const inviteResult = await teamMemberInviteService.sendEmailService({
+    name,
+    email,
+    role: role || "member",
+    workspaceId,
+    invitedBy,
+  });
 
-    const {name,email,role}=req.body;
+  if (!inviteResult || inviteResult.error) {
+    return res.status(400).json({
+      success: false,
+      message: inviteResult?.message || "Email Invite not sent",
+    });
+  }
 
-    // service
-    const response=await teamMemberInviteService.sendEmailService(name,email,role);
+  // 4. Trigger Real-time Event
+  emitInviteCreated({
+    email,
+    name,
+    role: role || "member",
+    workspaceId,
+    invitedBy,
+    inviteId: inviteResult._id || inviteResult.id,
+    createdAt: new Date(),
+  });
 
-    if(response==400){
-        return res.status(400).json({message:"Email Invite not sent"});
-    }
-    if(response==200){
-        return res.status(200).json({message:"Email invite sent"});
-    }
-
+  // 5. Send Success Response
+  return res.status(200).json({
+    success: true,
+    message: "Email invite sent successfully",
+    data: inviteResult,
+  });
 });
 
-module.exports={sendTeamMailInvite};
+module.exports = { sendTeamMailInvite };

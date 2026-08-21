@@ -1,10 +1,11 @@
+// Path: src/controllers/projectsController/project.Controller.js
 const async_handler = require("express-async-handler");
 const ProjectService = require("../../services/projectService");
 const { getProjectHealthService } = require("../../services/projectHealthService");
 
 const createProjectController = async_handler(async (req, res) => {
   if (!req.body) {
-    return res.status(400).json({ message: "body not provided" });
+    return res.status(400).json({ success: false, message: "body not provided" });
   }
 
   const {
@@ -29,7 +30,7 @@ const createProjectController = async_handler(async (req, res) => {
 
   const creatorUserId = req.auth?.userId || req.user?._id?.toString() || req.body.userId;
 
-  const { statuscode, data } = await ProjectService.projectCreateService(
+  const { statuscode, data, error } = await ProjectService.projectCreateService(
     workspaceId,
     name,
     key,
@@ -61,13 +62,13 @@ const createProjectController = async_handler(async (req, res) => {
   if (statuscode === 403) {
     return res.status(403).json({
       success: false,
-      message: "only workspace members can create project",
+      message: error || "only workspace members can create project",
     });
   }
 
   return res.status(400).json({
     success: false,
-    message: "project not created",
+    message: error || "project not created",
   });
 });
 
@@ -100,14 +101,14 @@ const updateProjectController = async_handler(async (req, res) => {
   if (statuscode === 403) {
     return res.status(403).json({
       success: false,
-      message: "only creator, owner or workspace admins can update project",
+      message: error || "only creator, owner or workspace admins can update project",
     });
   }
 
   if (statuscode === 404) {
     return res.status(404).json({
       success: false,
-      message: "project not found",
+      message: error || "project not found",
     });
   }
 
@@ -120,47 +121,66 @@ const updateProjectController = async_handler(async (req, res) => {
 const getProjectByIdController = async_handler(async (req, res) => {
   const { projectId } = req.params;
   if (!projectId) {
-    return res.status(400).json({ message: "project id not provided" });
+    return res.status(400).json({ success: false, message: "project id not provided" });
   }
 
-  const data = await ProjectService.projectGetByIdService(projectId);
-  if (!data) {
-    return res.status(404).json({ message: "project not found" });
+  const userId = req.auth?.userId || req.user?._id?.toString() || req.query.userId;
+  const { statuscode, data, error } = await ProjectService.projectGetByIdService(projectId, userId);
+
+  if (statuscode === 404) {
+    return res.status(404).json({ success: false, message: error || "project not found" });
   }
 
-  return res.status(200).json({
-    success: true,
-    message: "project fetched",
-    data: data,
-  });
+  if (statuscode === 403) {
+    return res.status(403).json({ success: false, message: error || "access denied to project" });
+  }
+
+  if (statuscode === 200 && data) {
+    return res.status(200).json({
+      success: true,
+      message: "project fetched",
+      data: data,
+    });
+  }
+
+  return res.status(400).json({ success: false, message: error || "unable to fetch project" });
 });
 
 const getAllProjectController = async_handler(async (req, res) => {
   const { workspaceId } = req.params;
   if (!workspaceId) {
-    return res.status(400).json({ message: "workspace id not provided" });
+    return res.status(400).json({ success: false, message: "workspace id not provided" });
   }
 
-  const data = await ProjectService.projectGetAllService(workspaceId);
-  if (!data) {
-    return res.status(404).json({ message: "projects not found" });
+  const userId = req.auth?.userId || req.user?._id?.toString() || req.query.userId;
+  const { statuscode, data, error } = await ProjectService.projectGetAllService(workspaceId, userId);
+
+  if (statuscode === 403) {
+    return res.status(403).json({ success: false, message: error || "unauthorized to view workspace projects" });
   }
 
-  return res.status(200).json({
-    success: true,
-    message: "projects fetched",
-    data: data,
+  if (statuscode === 200 && data) {
+    return res.status(200).json({
+      success: true,
+      message: "projects fetched",
+      data: data,
+    });
+  }
+
+  return res.status(400).json({
+    success: false,
+    message: error || "projects not found",
   });
 });
 
 const deleteProjectController = async_handler(async (req, res) => {
   const { projectId } = req.params;
   if (!projectId) {
-    return res.status(400).json({ message: "project id not provided" });
+    return res.status(400).json({ success: false, message: "project id not provided" });
   }
 
   const userId = req.auth?.userId || req.user?._id?.toString() || req.body.userId;
-  const { statuscode } = await ProjectService.projectDeleteService(projectId, userId);
+  const { statuscode, error } = await ProjectService.projectDeleteService(projectId, userId);
 
   if (statuscode === 200) {
     return res.status(200).json({
@@ -172,32 +192,31 @@ const deleteProjectController = async_handler(async (req, res) => {
   if (statuscode === 403) {
     return res.status(403).json({
       success: false,
-      message: "only creator can delete project",
+      message: error || "only creator or workspace admins can delete project",
     });
   }
 
   if (statuscode === 404) {
     return res.status(404).json({
       success: false,
-      message: "project not found",
+      message: error || "project not found",
     });
   }
 
   return res.status(400).json({
     success: false,
-    message: "project not deleted",
+    message: error || "project not deleted",
   });
 });
 
-// Project Stats / Health Controller
 const getProjectStatsController = async_handler(async (req, res) => {
   const { projectId } = req.params;
   const { timezone } = req.query;
 
   if (!projectId) {
-    return res.status(400).json({ 
-      success: false, 
-      message: "project id not provided" 
+    return res.status(400).json({
+      success: false,
+      message: "project id not provided",
     });
   }
 
