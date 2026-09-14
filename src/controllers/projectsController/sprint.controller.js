@@ -5,13 +5,13 @@ const createSprintController = async_handler(async (req, res) => {
     if (!req.body) {
         return res.status(400).json({ message: "body not provided" });
     }
-    const { workspaceId, projectId, name, goal, startDate, endDate, status } = req.body;
+    const { workspaceId, projectId, name, goal, startDate, endDate, status, points } = req.body;
     if (!workspaceId || !projectId || !name || !startDate || !endDate) {
         return res.status(400).json({ message: "workspaceId, projectId, name, startDate, and endDate are required" });
     }
 
     const { statuscode, data } = await sprintService.createSprintService(
-        { workspaceId, projectId, name, goal, startDate, endDate, status },
+        { workspaceId, projectId, name, goal, startDate, endDate, status, points },
         req.auth.userId
     );
 

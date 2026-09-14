@@ -19,6 +19,7 @@ async function connectToMongo() {
     await mongoose.connect(mongoUri, {
       dbName,
       serverSelectionTimeoutMS: 5000, // fail fast
+      family: 4, // Force IPv4 to prevent MongoNetworkTimeoutError on IPv6
     });
 
     console.log("✅ MongoDB connected");

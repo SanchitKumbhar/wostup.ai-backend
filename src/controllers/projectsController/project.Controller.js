@@ -2,6 +2,7 @@
 const async_handler = require("express-async-handler");
 const ProjectService = require("../../services/projectService");
 const { getProjectHealthService } = require("../../services/projectHealthService");
+const { Project } = require("../../models/index");
 
 const createProjectController = async_handler(async (req, res) => {
   if (!req.body) {
@@ -236,6 +237,39 @@ const getProjectStatsController = async_handler(async (req, res) => {
   });
 });
 
+const getProjectMembersController = async_handler(async (req, res) => {
+  const { projectId } = req.params;
+  if (!projectId) {
+    return res.status(400).json({ success: false, message: "project id not provided" });
+  }
+
+  try {
+    const project = await Project.findOne(
+      { _id: projectId, deletedAt: null },
+      { members: 1 }
+    ).populate("members.userId", "name email avatar clerkId");
+
+    if (!project) {
+      return res.status(404).json({ success: false, message: "project not found" });
+    }
+
+    // Normalize member data
+    const members = (project.members || []).map((m) => ({
+      userId: m.userId?._id || m.userId,
+      name: m.userId?.name || "Unknown",
+      email: m.userId?.email || "",
+      avatar: m.userId?.avatar || null,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    }));
+
+    return res.status(200).json({ success: true, data: members });
+  } catch (error) {
+    console.error("Error in getProjectMembersController:", error);
+    return res.status(500).json({ success: false, message: "Failed to fetch project members" });
+  }
+});
+
 module.exports = {
   createProjectController,
   updateProjectController,
@@ -249,4 +283,5 @@ module.exports = {
   deleteProjectByIdController: deleteProjectController,
   getProjectStatsController,
   getProjectStatsByIdController: getProjectStatsController,
+  getProjectMembersController,
 };

@@ -94,6 +94,28 @@ async function validateMembership(workspaceId, userId) {
   return Boolean(isMember);
 }
 
+async function applyRoleBasedTaskFilter(taskQuery, workspaceObjectId, userId) {
+  if (!userId) return;
+  const workspace = await mongoose.model("Workspace").findById(workspaceObjectId, { ownerUserId: 1 }).lean();
+  const isWorkspaceOwner = workspace?.ownerUserId?.toString() === userId;
+  if (isWorkspaceOwner) return;
+
+  const ownedProjects = await mongoose.model("Project").find({ 
+    workspaceId: workspaceObjectId, 
+    ownerId: new mongoose.Types.ObjectId(userId), 
+    deletedAt: null 
+  }, { _id: 1 }).lean();
+  
+  const isProjectOwner = ownedProjects.length > 0;
+  if (isProjectOwner) return; // Project Owners see all tasks based on requirements
+
+  // Regular members see only their assigned or created tasks
+  taskQuery.$or = [
+    { assigneeUserId: new mongoose.Types.ObjectId(userId) },
+    { createdBy: new mongoose.Types.ObjectId(userId) }
+  ];
+}
+
 async function getAssigneeMap(tasks) {
   const assigneeIds = [
     ...new Set(
@@ -198,6 +220,8 @@ async function getTaskHealthSummaryService({ workspaceId, projectId, userId }) {
       if (resolvedProjectId) taskQuery.projectId = resolvedProjectId;
     }
 
+    await applyRoleBasedTaskFilter(taskQuery, workspaceObjectId, userId);
+
     const tasks = await Task.find(taskQuery).lean();
     const now = Date.now();
 
@@ -269,6 +293,8 @@ async function getTaskHealthBoardService({ workspaceId, projectId, userId }) {
       const resolvedProjectId = await resolveProjectId(projectId);
       if (resolvedProjectId) taskQuery.projectId = resolvedProjectId;
     }
+
+    await applyRoleBasedTaskFilter(taskQuery, workspaceObjectId, userId);
 
     const [tasks, projectDocs] = await Promise.all([
       Task.find(taskQuery).sort({ priority: -1, dueDate: 1 }).lean(),

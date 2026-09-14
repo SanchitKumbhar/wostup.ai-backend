@@ -101,7 +101,14 @@ async function updateTaskService(taskId, userId, body) {
     if (!userId) return { statuscode: 400, data: null };
     const task = await Task.findById(taskId, { createdBy: 1, status: 1, dueDate: 1, workspaceId: 1 });
     if (!task) return { statuscode: 404, data: null };
-    if (task.createdBy.toString() !== userId.toString()) return { statuscode: 403, data: null };
+
+    // Status updates (drag-drop, sprint assignment) are allowed by any workspace member
+    // Sensitive destructive changes (title, description) are creator-only
+    const isCreator = task.createdBy.toString() === userId.toString();
+    const hasSensitiveChange = body.title !== undefined || (body.description !== undefined && !isCreator);
+    if (!isCreator && hasSensitiveChange) {
+      return { statuscode: 403, data: null };
+    }
 
     if (body.status && body.status !== task.status) body.statusEnteredAt = new Date();
     if (body.actualProgress !== undefined) body.actualProgress = Number(body.actualProgress);

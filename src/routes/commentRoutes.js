@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { authMiddleware } = require("../middleware/authMiddleware");
 
 const {
   createCommentController,
@@ -8,6 +9,9 @@ const {
   getAllCommentController,
   deleteCommentController,
 } = require("../controllers/projectsController/comments.Controller");
+
+// All comment routes require authentication
+router.use(authMiddleware);
 
 // Create a comment in a task
 router.post("/v1/createComment/:taskId", createCommentController);

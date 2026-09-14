@@ -36,6 +36,8 @@ async function startServer() {
     require("./workers/emailVerification.worker");
     require("./workers/stuckTask.worker.js");
     require("./workers/githubWebhook.worker.js");
+    require("./workers/githubSync.worker.js");
+    require("./scheduler/github.scheduler.js");
     // ✅ START ONLY ONE SERVER
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);

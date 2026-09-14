@@ -12,6 +12,7 @@ const createMilestoneController = async_handler(async (req, res) => {
     name,
     title, // in case frontend payload sends 'title'
     description,
+    startDate,
     dueDate,
     completionPercentage,
     userId: bodyUserId,
@@ -33,6 +34,7 @@ const createMilestoneController = async_handler(async (req, res) => {
     projectId,
     milestoneName,
     description,
+    startDate,
     dueDate,
     completionPercentage,
     creatorUserId

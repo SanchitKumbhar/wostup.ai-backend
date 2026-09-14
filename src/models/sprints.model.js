@@ -31,6 +31,10 @@ const sprintSchema = new mongoose.Schema(
       default: "",
       maxlength: 2000,
     },
+    points: {
+      type: Number,
+      default: 0,
+    },
     status: {
       type: String,
       enum: ["future", "active", "completed"],

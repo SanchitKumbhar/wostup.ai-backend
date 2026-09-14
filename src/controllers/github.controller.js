@@ -6,6 +6,7 @@ const {
   GithubInstallation,
   GithubRepo,
   GithubPullRequest,
+  GithubCommit,
 } = require("../models");
 const { getInstallationOctokit } = require("../services/githubApp.service");
 
@@ -14,7 +15,7 @@ if (!JWT_SECRET) {
   console.warn("⚠️ Warning: JWT_SECRET environment variable is missing for GitHub App state signing.");
 }
 
-const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG || "wostup-ai";
+const GITHUB_APP_SLUG = process.env.GITHUB_APP_SLUG || "wostup";
 
 /**
  * GET /api/github/connect/:workspaceId
@@ -65,7 +66,13 @@ async function getConnectUrl(req, res) {
  */
 async function handleSetupCallback(req, res) {
   try {
-    const { installation_id, state } = req.query;
+    const { installation_id, state, setup_action } = req.query;
+    const frontendUrl = process.env.CLIENT_URL || "http://localhost:5173";
+
+    if (setup_action === "request") {
+      // User requested installation on an organization they don't own
+      return res.redirect(`${frontendUrl}/github?installation_requested=true`);
+    }
 
     if (!installation_id || !state) {
       return res.status(400).json({ error: "Missing installation_id or state query parameter" });
@@ -144,16 +151,10 @@ async function handleSetupCallback(req, res) {
       savedRepos.push(repoRecord);
     }
 
-    return res.status(200).json({
-      success: true,
-      message: "GitHub App installed successfully",
-      installation: installationRecord,
-      reposCount: savedRepos.length,
-      repos: savedRepos,
-    });
+    return res.redirect(`${frontendUrl}/github?installation_success=true`);
   } catch (error) {
     console.error("Error handling GitHub setup callback:", error);
-    return res.status(500).json({ error: error.message || "Failed to complete GitHub setup" });
+    return res.redirect(`${process.env.CLIENT_URL || "http://localhost:5173"}/github?installation_error=true`);
   }
 }
 
@@ -198,6 +199,34 @@ async function getUnattachedRepos(req, res) {
   } catch (error) {
     console.error("Error fetching unattached repos:", error);
     return res.status(500).json({ error: error.message || "Failed to fetch unattached repos" });
+  }
+}
+
+/**
+ * GET /api/github/projects/:projectId/attached-repos
+ * Lists all attached repositories for a specific project.
+ */
+async function getAttachedRepos(req, res) {
+  try {
+    const { projectId } = req.params;
+
+    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ error: "Invalid projectId format" });
+    }
+
+    const attachedRepos = await GithubRepo.find({
+      projectId: new mongoose.Types.ObjectId(projectId),
+    }).sort({ fullName: 1 });
+
+    return res.status(200).json({
+      success: true,
+      projectId,
+      count: attachedRepos.length,
+      attachedRepos,
+    });
+  } catch (error) {
+    console.error("Error fetching attached repos:", error);
+    return res.status(500).json({ error: error.message || "Failed to fetch attached repos" });
   }
 }
 
@@ -273,6 +302,12 @@ async function attachRepoToProject(req, res) {
         error: "Repository is already attached to another project and locked.",
       });
     }
+
+    // Trigger background full sync for the repository
+    const { enqueueGithubSync } = require("../queues/githubSync.queue");
+    enqueueGithubSync({ repoId: updatedRepo._id }).catch(err => {
+      console.error("Failed to enqueue github sync:", err.message);
+    });
 
     return res.status(200).json({
       success: true,
@@ -405,6 +440,7 @@ async function getProjectPullRequests(req, res) {
     }
 
     const items = await GithubPullRequest.find(query)
+      .populate("repoId", "fullName")
       .sort({ updatedAtGh: -1, _id: -1 })
       .limit(limit + 1)
       .lean();
@@ -437,11 +473,93 @@ async function getProjectPullRequests(req, res) {
   }
 }
 
+/**
+ * GET /api/github/projects/:projectId/commits
+ * Returns cursor-paginated synced Commits for a project.
+ */
+async function getProjectCommits(req, res) {
+  try {
+    const { projectId } = req.params;
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+    const cursor = req.query.cursor;
+
+    if (!projectId || !mongoose.Types.ObjectId.isValid(projectId)) {
+      return res.status(400).json({ error: "Invalid projectId format" });
+    }
+
+    const attachedRepos = await GithubRepo.find({
+      projectId: new mongoose.Types.ObjectId(projectId),
+    }).lean();
+
+    if (!attachedRepos.length) {
+      return res.status(200).json({
+        success: true,
+        projectId,
+        commits: [],
+        nextCursor: null,
+        hasMore: false,
+      });
+    }
+
+    const repoIds = attachedRepos.map((r) => r._id);
+    const query = { repoId: { $in: repoIds } };
+
+    if (cursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(cursor, "base64").toString("utf8"));
+        const cursorDate = new Date(decoded.committedAt);
+        const cursorId = new mongoose.Types.ObjectId(decoded.id);
+
+        query.$or = [
+          { committedAt: { $lt: cursorDate } },
+          { committedAt: cursorDate, _id: { $lt: cursorId } },
+        ];
+      } catch (_err) {
+        return res.status(400).json({ error: "Invalid cursor format" });
+      }
+    }
+
+    const items = await GithubCommit.find(query)
+      .populate("repoId", "fullName")
+      .sort({ committedAt: -1, _id: -1 })
+      .limit(limit + 1)
+      .lean();
+
+    const hasMore = items.length > limit;
+    const commits = hasMore ? items.slice(0, limit) : items;
+
+    let nextCursor = null;
+    if (hasMore && commits.length > 0) {
+      const lastItem = commits[commits.length - 1];
+      nextCursor = Buffer.from(
+        JSON.stringify({
+          committedAt: lastItem.committedAt,
+          id: lastItem._id.toString(),
+        })
+      ).toString("base64");
+    }
+
+    return res.status(200).json({
+      success: true,
+      projectId,
+      count: commits.length,
+      commits,
+      nextCursor,
+      hasMore,
+    });
+  } catch (error) {
+    console.error("Error fetching project commits:", error);
+    return res.status(500).json({ error: error.message || "Failed to fetch commits" });
+  }
+}
+
 module.exports = {
   getConnectUrl,
   handleSetupCallback,
   getUnattachedRepos,
+  getAttachedRepos,
   attachRepoToProject,
   detachRepoFromProject,
   getProjectPullRequests,
+  getProjectCommits,
 };

@@ -71,10 +71,7 @@ async function generateRealtimeBurndown({
   const hasActivityLogs = dailyChanges.length > 0;
   const activityMap = new Map(dailyChanges.map((d) => [d._id, d]));
 
-  const totalScopePoints = tasks.reduce(
-    (sum, t) => sum + Number(t.storyPoints || t.points || 1),
-    0
-  );
+  const totalScopePoints = tasks.length;
 
   // Baseline scope represents planned points at Day 0
   const startDateStr = new Date(startDate).toISOString().split("T")[0];
@@ -100,7 +97,7 @@ async function generateRealtimeBurndown({
   const fallbackCompletions = tasks
     .filter((t) => t.status === "done" && (t.completedAt || t.updatedAt))
     .map((t) => ({
-      points: Number(t.storyPoints || t.points || 1),
+      points: 1,
       date: new Date(t.completedAt || t.updatedAt),
     }));
 

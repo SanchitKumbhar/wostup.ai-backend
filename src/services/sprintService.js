@@ -2,7 +2,7 @@ const { Sprint, WorkspaceMember } = require("../models/index");
 const { resolveProjectId } = require("../utils/resolveProject");
 
 async function createSprintService(payload, userId) {
-    const { workspaceId, projectId, name, goal, startDate, endDate, status } = payload;
+    const { workspaceId, projectId, name, goal, startDate, endDate, status, points } = payload;
 
     const isMember = await WorkspaceMember.findOne({ workspaceId, userId });
     if (!isMember) {
@@ -15,6 +15,7 @@ async function createSprintService(payload, userId) {
         createdBy: userId,
         name,
         goal: goal || "",
+        points: points || 0,
         status: status || "future",
         startDate: new Date(startDate),
         endDate: new Date(endDate),

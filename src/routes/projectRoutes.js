@@ -9,6 +9,7 @@ const {
   getAllProjectController,
   deleteProjectController,
   getProjectStatsController,
+  getProjectMembersController,
 } = require("../controllers/projectsController/project.Controller");
 
 // Project CRUD
@@ -17,8 +18,10 @@ router.put("/v1/updateProjectById/:projectId", authMiddleware, updateProjectCont
 router.delete("/v1/deleteProjectById/:projectId", authMiddleware, deleteProjectController);
 
 // Project Stats Route
-// router.get("/v1/projectStats/:projectId", getProjectStatsController);
 router.get("/v1/stats/:projectId", getProjectStatsController);
+
+// Get project members
+router.get("/v1/members/:projectId", authMiddleware, getProjectMembersController);
 
 // Read Routes
 router.get("/v1/getProjects/:workspaceId", getAllProjectController);

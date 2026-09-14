@@ -30,7 +30,11 @@ const { initInviteSocket } = require("./sockets/inviteSocket");
 
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-email', 'ngrok-skip-browser-warning', 'x-custom-header']
+}));
 
 // Mount raw webhook route BEFORE express.json() to preserve raw body Buffer for HMAC verification
 app.use("/webhooks/github", githubWebhookRoutes);

@@ -9,6 +9,7 @@ const { resolveProjectId } = require("../utils/resolveProject");
  * @param {string} projectId
  * @param {string} name
  * @param {string} description
+ * @param {string|Date} startDate
  * @param {string|Date} dueDate
  * @param {number} completionPercentage
  * @param {string} userId
@@ -18,6 +19,7 @@ async function milestoneCreateService(
   projectId,
   name,
   description,
+  startDate,
   dueDate,
   completionPercentage,
   userId
@@ -40,7 +42,7 @@ async function milestoneCreateService(
       createdBy: new mongoose.Types.ObjectId(userId),
       name: name.trim(),
       description: description || "",
-      startDate: new Date(),
+      startDate: startDate ? new Date(startDate) : new Date(),
       dueDate: new Date(dueDate),
       completionPercentage: typeof completionPercentage === "number" ? completionPercentage : 0,
       deletedAt: null,

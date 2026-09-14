@@ -31,9 +31,12 @@ const createTaskController = async_handler(async (req, res) => {
     milestoneId,
     dueDate,
     dependency,
-    storyPoints,
-    points,
     userId: bodyUserId,
+    sprintId,
+    epicId,
+    priority,
+    isBacklog,
+    storyPoints,
   } = req.body;
 
   // Safely extract creator user ID
@@ -45,18 +48,8 @@ const createTaskController = async_handler(async (req, res) => {
 
   const resolvedTitle = title || titile;
   const { statuscode, data } = await createTaskService(
-    workspaceId,
-    resolvedTitle,
-    description,
-    status,
-    actualProgress,
-    assigneeUserId,
-    projectId,
-    milestoneId,
-    dueDate,
-    dependency,
-    creatorUserId,
-    storyPoints || points
+    { workspaceId, title: resolvedTitle, description, status, actualProgress, assigneeUserId, projectId, milestoneId, dueDate, dependency, sprintId, epicId, priority, isBacklog, storyPoints },
+    creatorUserId
   );
 
   if (statuscode === 201 && data) {
@@ -110,9 +103,6 @@ const updateTaskController = async_handler(async (req, res) => {
     if (oldTask) {
       const oldStatus = oldTask.status;
       const newStatus = updatedTask.status;
-      const oldPoints = Number(oldTask.storyPoints || oldTask.points || 1);
-      const newPoints = Number(updatedTask.storyPoints || updatedTask.points || 1);
-
       // Track Status Transitions (e.g., Todo -> Done, Done -> In Progress)
       if (oldStatus !== newStatus) {
         recordTaskActivity({
@@ -124,19 +114,6 @@ const updateTaskController = async_handler(async (req, res) => {
           oldTask,
           newTask: updatedTask,
         }).catch((err) => console.error("Error recording STATUS_UPDATED activity:", err));
-      }
-
-      // Track Story Point / Scope Changes
-      if (oldPoints !== newPoints) {
-        recordTaskActivity({
-          workspaceId: updatedTask.workspaceId,
-          projectId: updatedTask.projectId,
-          taskId: updatedTask._id,
-          userId,
-          action: "POINTS_UPDATED",
-          oldTask,
-          newTask: updatedTask,
-        }).catch((err) => console.error("Error recording POINTS_UPDATED activity:", err));
       }
     }
 

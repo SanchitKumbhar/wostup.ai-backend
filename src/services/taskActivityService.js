@@ -12,7 +12,7 @@ async function recordTaskActivity({
   let pointsDelta = 0;
   let remainingDelta = 0;
 
-  const getPoints = (task) => Number(task?.storyPoints || task?.points || 1);
+  const getPoints = (task) => 1;
   const isDone = (status) => status === "done" || status === "Completed";
 
   switch (action) {
@@ -36,15 +36,7 @@ async function recordTaskActivity({
       break;
     }
 
-    case "POINTS_UPDATED": {
-      const oldPoints = getPoints(oldTask);
-      const newPoints = getPoints(newTask);
-      const diff = newPoints - oldPoints;
 
-      pointsDelta = diff;
-      remainingDelta = isDone(newTask.status) ? 0 : diff;
-      break;
-    }
 
     case "DELETED": {
       const points = getPoints(oldTask);
@@ -69,8 +61,6 @@ async function recordTaskActivity({
     metadata: {
       fromStatus: oldTask?.status,
       toStatus: newTask?.status,
-      fromPoints: oldTask?.storyPoints || oldTask?.points,
-      toPoints: newTask?.storyPoints || newTask?.points,
     },
   });
 }
