@@ -1,30 +1,73 @@
-const { Epic, WorkspaceMember } = require("../models/index");
+const { Epic, WorkspaceMember, Workspace, Project } = require("../models/index");
+const mongoose = require("mongoose");
 const { resolveProjectId } = require("../utils/resolveProject");
+const { generateSubEntityId } = require("../utils/idGenerator");
 
 async function createEpicService(payload, userId) {
-    const { workspaceId, projectId, name, summary, description, color, status, startDate, dueDate } = payload;
+    try {
+        let { workspaceId, projectId, name, summary, description, color, status, startDate, dueDate } = payload;
 
-    const isMember = await WorkspaceMember.findOne({ workspaceId, userId });
-    if (!isMember) {
-        return { statuscode: 403, data: null };
+        if (!name || !name.trim()) {
+            return { statuscode: 400, data: null, message: "Epic name is required" };
+        }
+
+        const resolvedProjectId = await resolveProjectId(projectId);
+        if (!resolvedProjectId) {
+            return { statuscode: 400, data: null, message: "Invalid or non-existent projectId" };
+        }
+
+        if (!workspaceId) {
+            const projDoc = await Project.findById(resolvedProjectId).select("workspaceId").lean();
+            if (projDoc && projDoc.workspaceId) {
+                workspaceId = projDoc.workspaceId;
+            }
+        }
+
+        if (!workspaceId) {
+            return { statuscode: 400, data: null, message: "workspaceId is required" };
+        }
+
+        const wsObjectId = mongoose.Types.ObjectId.isValid(workspaceId)
+            ? new mongoose.Types.ObjectId(workspaceId)
+            : workspaceId;
+        const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+            ? new mongoose.Types.ObjectId(userId)
+            : userId;
+
+        const isMember = await WorkspaceMember.findOne({ workspaceId: wsObjectId, userId: userObjectId }).lean();
+        let hasAccess = Boolean(isMember);
+        if (!hasAccess && Workspace) {
+            const isOwner = await Workspace.findOne({ _id: wsObjectId, ownerUserId: userObjectId }).lean();
+            if (isOwner) hasAccess = true;
+        }
+
+        if (!hasAccess) {
+            return { statuscode: 403, data: null, message: "You are not a member of this workspace" };
+        }
+
+        const displayId = await generateSubEntityId("Epic", resolvedProjectId);
+
+        const epicData = {
+            workspaceId: wsObjectId,
+            projectId: resolvedProjectId,
+            displayId,
+            createdBy: userObjectId,
+            name: name.trim(),
+            summary: summary || "",
+            description: description || "",
+            color: color || "#8B5CF6",
+            status: status || "To Do",
+        };
+
+        if (startDate) epicData.startDate = new Date(startDate);
+        if (dueDate) epicData.dueDate = new Date(dueDate);
+
+        const data = await Epic.create(epicData);
+        return { statuscode: 201, data };
+    } catch (error) {
+        console.error("Error in createEpicService:", error);
+        return { statuscode: 400, data: null, message: error.message };
     }
-
-    const epicData = {
-        workspaceId,
-        projectId,
-        createdBy: userId,
-        name,
-        summary: summary || "",
-        description: description || "",
-        color: color || "#8B5CF6",
-        status: status || "To Do",
-    };
-
-    if (startDate) epicData.startDate = new Date(startDate);
-    if (dueDate) epicData.dueDate = new Date(dueDate);
-
-    const data = await Epic.create(epicData);
-    return { statuscode: 201, data };
 }
 
 async function updateEpicService(epicId, userId, body) {
@@ -69,7 +112,12 @@ async function getAllEpicsService(projectId) {
       .sort({ createdAt: -1 })
       .lean();
 
-    return { statuscode: 200, data: epics };
+    const enrichedEpics = epics.map((e, idx) => ({
+      ...e,
+      displayId: e.displayId || `EPC-${epics.length - idx}`,
+    }));
+
+    return { statuscode: 200, data: enrichedEpics };
   } catch (error) {
     console.error("Error in getAllEpicsService:", error);
     return { statuscode: 500, data: null, error: error.message };

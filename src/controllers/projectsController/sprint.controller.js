@@ -6,22 +6,27 @@ const createSprintController = async_handler(async (req, res) => {
         return res.status(400).json({ message: "body not provided" });
     }
     const { workspaceId, projectId, name, goal, startDate, endDate, status, points } = req.body;
-    if (!workspaceId || !projectId || !name || !startDate || !endDate) {
-        return res.status(400).json({ message: "workspaceId, projectId, name, startDate, and endDate are required" });
+    if (!projectId || !name) {
+        return res.status(400).json({ message: "projectId and name are required" });
     }
 
-    const { statuscode, data } = await sprintService.createSprintService(
+    const creatorUserId = req.auth?.userId || req.user?._id?.toString() || req.body?.userId;
+    if (!creatorUserId) {
+        return res.status(401).json({ message: "Unauthorized: User ID not found" });
+    }
+
+    const { statuscode, data, message } = await sprintService.createSprintService(
         { workspaceId, projectId, name, goal, startDate, endDate, status, points },
-        req.auth.userId
+        creatorUserId
     );
 
     if (statuscode === 201) {
         return res.status(201).json({ message: "sprint created", data });
     }
     if (statuscode === 403) {
-        return res.status(403).json({ message: "only workspace members can create sprint" });
+        return res.status(403).json({ message: message || "only workspace members can create sprint" });
     }
-    return res.status(400).json({ message: "sprint not created" });
+    return res.status(statuscode || 400).json({ message: message || "sprint not created" });
 });
 
 const updateSprintController = async_handler(async (req, res) => {
@@ -29,9 +34,14 @@ const updateSprintController = async_handler(async (req, res) => {
         return res.status(400).json({ message: "body or sprintId not provided" });
     }
 
-    const { statuscode, data } = await sprintService.updateSprintService(
+    const userId = req.auth?.userId || req.user?._id?.toString() || req.body?.userId;
+    if (!userId) {
+        return res.status(401).json({ message: "Unauthorized: User ID not found" });
+    }
+
+    const { statuscode, data, message } = await sprintService.updateSprintService(
         req.params.sprintId,
-        req.auth.userId,
+        userId,
         req.body
     );
 
@@ -39,12 +49,12 @@ const updateSprintController = async_handler(async (req, res) => {
         return res.status(200).json({ message: "sprint updated", data });
     }
     if (statuscode === 403) {
-        return res.status(403).json({ message: "only creator can update sprint" });
+        return res.status(403).json({ message: message || "only creator can update sprint" });
     }
     if (statuscode === 404) {
-        return res.status(404).json({ message: "sprint not found" });
+        return res.status(404).json({ message: message || "sprint not found" });
     }
-    return res.status(400).json({ message: "sprint not updated" });
+    return res.status(statuscode || 400).json({ message: message || "sprint not updated" });
 });
 
 const getSprintByIdController = async_handler(async (req, res) => {

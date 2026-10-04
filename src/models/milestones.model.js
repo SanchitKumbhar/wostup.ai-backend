@@ -5,6 +5,7 @@ const milestoneSchema = new mongoose.Schema(
     workspaceId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Workspace" },
     projectId: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "Project" },
     createdBy: { type: mongoose.Schema.Types.ObjectId, required: true, ref: "User" },
+    displayId: { type: String, trim: true, index: true },
     name: { type: String, required: true, trim: true, minlength: 1, maxlength: 180 },
     description: { type: String, default: "", maxlength: 2000 },
     

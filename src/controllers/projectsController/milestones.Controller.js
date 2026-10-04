@@ -65,14 +65,19 @@ const updateMilestineController = async_handler(async (req, res) => {
         });
     }
 
+    const userId = req.auth?.userId || req.user?._id?.toString() || req.body?.userId;
+    if (!userId) {
+        return res.status(401).json({ message: "Unauthorized: User ID not found" });
+    }
+
     const {statuscode,data} = await MilestoneServices.milestoneUpdateService(
         req.params.milestoneId,
-        req.auth.userId,
+        userId,
         req.body
     );
 
     if (statuscode == 200) {
-        return res.status(201).json({
+        return res.status(200).json({
             message: "milestone updated",
             data:data
         });
@@ -124,11 +129,15 @@ const getAllMilestoneController = async_handler(async (req, res) => {
     const data = await MilestoneServices.milestoneGetAllService(req.params.projectId);
     if (!data) {
         return res.status(404).json({
-            "message": "milestone not found"
+            success: false,
+            message: "milestone not found",
+            data: []
         })
     }
     return res.status(200).json({
-        "message": data
+        success: true,
+        message: "Milestones fetched successfully",
+        data: data || []
     })
 
 });
@@ -142,7 +151,7 @@ const deleteMilestoneController=async_handler(async(req,res)=>{
     const { statuscode } = await MilestoneServices.milestoneDeleteService(req.params.milestoneId, req.auth.userId);
 
     if (statuscode == 200) {
-        return res.status(201).json({
+        return res.status(200).json({
             message: "milestone deleted"
         });
 

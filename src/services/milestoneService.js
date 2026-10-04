@@ -1,7 +1,8 @@
 // services/milestoneService.js
-const { Milestone, WorkspaceMember } = require("../models/index");
+const { Milestone, WorkspaceMember, Workspace, Project } = require("../models/index");
 const mongoose = require("mongoose");
 const { resolveProjectId } = require("../utils/resolveProject");
+const { generateSubEntityId } = require("../utils/idGenerator");
 
 /**
  * Create a new Milestone
@@ -25,25 +26,64 @@ async function milestoneCreateService(
   userId
 ) {
   try {
-    // 1. Verify that the requester is a member of the workspace
-    const isMember = await WorkspaceMember.findOne({
-      workspaceId: new mongoose.Types.ObjectId(workspaceId),
-      userId: new mongoose.Types.ObjectId(userId),
-    });
-
-    if (!isMember) {
-      return { statuscode: 403, data: null };
+    if (!name || !name.trim()) {
+      return { statuscode: 400, data: null, error: "Milestone name is required" };
     }
+
+    const resolvedProjectId = await resolveProjectId(projectId);
+    if (!resolvedProjectId) {
+      return { statuscode: 400, data: null, error: "Invalid or non-existent projectId" };
+    }
+
+    if (!workspaceId) {
+      const projDoc = await Project.findById(resolvedProjectId).select("workspaceId").lean();
+      if (projDoc && projDoc.workspaceId) {
+        workspaceId = projDoc.workspaceId;
+      }
+    }
+
+    if (!workspaceId) {
+      return { statuscode: 400, data: null, error: "workspaceId is required" };
+    }
+
+    const wsObjectId = mongoose.Types.ObjectId.isValid(workspaceId)
+      ? new mongoose.Types.ObjectId(workspaceId)
+      : workspaceId;
+    const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+      ? new mongoose.Types.ObjectId(userId)
+      : userId;
+
+    // 1. Verify that the requester is a member or owner of the workspace
+    const isMember = await WorkspaceMember.findOne({
+      workspaceId: wsObjectId,
+      userId: userObjectId,
+    }).lean();
+
+    let hasAccess = Boolean(isMember);
+    if (!hasAccess && Workspace) {
+      const isOwner = await Workspace.findOne({ _id: wsObjectId, ownerUserId: userObjectId }).lean();
+      if (isOwner) hasAccess = true;
+    }
+
+    if (!hasAccess) {
+      return { statuscode: 403, data: null, error: "You are not a member of this workspace" };
+    }
+
+    const displayId = await generateSubEntityId("Milestone", resolvedProjectId);
+
+    const parsedDueDate = dueDate ? new Date(dueDate) : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    const parsedStartDate = startDate ? new Date(startDate) : new Date();
 
     // 2. Prepare milestone data
     const milestoneData = {
-      workspaceId: new mongoose.Types.ObjectId(workspaceId),
-      projectId: new mongoose.Types.ObjectId(projectId),
-      createdBy: new mongoose.Types.ObjectId(userId),
+      workspaceId: wsObjectId,
+      projectId: resolvedProjectId,
+      displayId,
+      createdBy: userObjectId,
       name: name.trim(),
       description: description || "",
-      startDate: startDate ? new Date(startDate) : new Date(),
-      dueDate: new Date(dueDate),
+      startDate: isNaN(parsedStartDate.getTime()) ? new Date() : parsedStartDate,
+      dueDate: isNaN(parsedDueDate.getTime()) ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000) : parsedDueDate,
       completionPercentage: typeof completionPercentage === "number" ? completionPercentage : 0,
       deletedAt: null,
     };
@@ -154,7 +194,12 @@ async function milestoneGetAllService(projectId) {
       .sort({ dueDate: 1 })
       .lean();
 
-    return milestones;
+    const enrichedMilestones = milestones.map((m, idx) => ({
+      ...m,
+      displayId: m.displayId || `MLS-${idx + 1}`,
+    }));
+
+    return enrichedMilestones;
   } catch (error) {
     console.error("Error in milestoneGetAllService:", error);
     return null;

@@ -51,6 +51,14 @@ const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema(
   {
+    clerkId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      trim: true,
+      index: true,
+    },
+
     name: { type: String, required: true, trim: true, minlength: 1, maxlength: 120 },
 
     email: {
@@ -64,6 +72,7 @@ const userSchema = new mongoose.Schema(
     shortbio: { type: String, maxlength: 200 },
 
     avatar: { type: String, required: true, minlength: 1, maxlength: 8 },
+    imageUrl: { type: String, trim: true, default: "" },
 
     // ROLE FOR AUTHORIZATION
     role: {

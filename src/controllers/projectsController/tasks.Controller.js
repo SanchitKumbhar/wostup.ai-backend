@@ -47,7 +47,7 @@ const createTaskController = async_handler(async (req, res) => {
   }
 
   const resolvedTitle = title || titile;
-  const { statuscode, data } = await createTaskService(
+  const { statuscode, data, message } = await createTaskService(
     { workspaceId, title: resolvedTitle, description, status, actualProgress, assigneeUserId, projectId, milestoneId, dueDate, dependency, sprintId, epicId, priority, isBacklog, storyPoints },
     creatorUserId
   );
@@ -73,10 +73,10 @@ const createTaskController = async_handler(async (req, res) => {
   }
 
   if (statuscode === 403) {
-    return res.status(403).json({ message: "only workspace members can create task" });
+    return res.status(403).json({ message: message || "only workspace members can create task" });
   }
 
-  return res.status(400).json({ message: "task not created" });
+  return res.status(statuscode || 400).json({ message: message || "task not created" });
 });
 
 const updateTaskController = async_handler(async (req, res) => {

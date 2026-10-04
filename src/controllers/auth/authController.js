@@ -13,9 +13,11 @@ async function me(req, res) {
       success: true,
       data: {
         id: user._id,
+        clerkId: user.clerkId || "",
         name: user.name,
         email: user.email,
         avatar: user.avatar,
+        imageUrl: user.imageUrl || "",
         roleTitle: user.roleTitle || "",
         skills: user.skills || [],
         shortbio: user.shortbio || "",

@@ -19,6 +19,11 @@ const sprintSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    displayId: {
+      type: String,
+      trim: true,
+      index: true,
+    },
     name: {
       type: String,
       required: true,

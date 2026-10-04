@@ -36,11 +36,57 @@ async function authMiddleware(req, res, next) {
 
     const authPayload = requestState.toAuth();
     const clerkUserId = authPayload.userId;
-    const userEmail = authPayload.claims?.email || req.headers["x-user-email"];
+    const userEmail = (authPayload.claims?.email || req.headers["x-user-email"])?.toLowerCase()?.trim();
 
-    const user = await User.findOne({ email: userEmail?.toLowerCase().trim() });
+    // 1. Look up by clerkId first, then by email
+    let user = null;
+    if (clerkUserId) {
+      user = await User.findOne({ clerkId: clerkUserId });
+    }
+    if (!user && userEmail) {
+      user = await User.findOne({ email: userEmail });
+      // Associate existing MongoDB profile with Clerk ID
+      if (user && clerkUserId && !user.clerkId) {
+        user.clerkId = clerkUserId;
+        await user.save();
+        console.log(`🔗 [Auth] Associated existing MongoDB user ${user.email} with clerkId ${clerkUserId}`);
+      }
+    }
+
+    // 2. Fallback auto-provision if user authenticated via Clerk but webhook has not synced yet
+    if (!user && clerkUserId) {
+      try {
+        const clerkUser = await clerkClient.users.getUser(clerkUserId);
+        const primaryEmail = (clerkUser.emailAddresses?.[0]?.emailAddress || userEmail)?.toLowerCase()?.trim();
+        const fullName = `${clerkUser.firstName || ""} ${clerkUser.lastName || ""}`.trim() || primaryEmail?.split("@")[0] || "User";
+        const avatarLetter = (fullName.charAt(0) || "U").toUpperCase();
+
+        if (primaryEmail) {
+          user = await User.findOneAndUpdate(
+            { $or: [{ clerkId: clerkUserId }, { email: primaryEmail }] },
+            {
+              $set: {
+                clerkId: clerkUserId,
+                name: fullName,
+                email: primaryEmail,
+                avatar: avatarLetter,
+                imageUrl: clerkUser.imageUrl || "",
+                emailVerified: true,
+                isActive: true,
+                deletedAt: null,
+              },
+            },
+            { upsert: true, new: true, runValidators: true, setDefaultsOnInsert: true }
+          );
+          console.log(`✨ [Auth] Auto-provisioned user ${primaryEmail} with clerkId ${clerkUserId}`);
+        }
+      } catch (clerkFetchErr) {
+        console.warn(`[Auth] Could not fetch user from Clerk API for auto-provisioning:`, clerkFetchErr.message);
+      }
+    }
+
     if (!user) {
-      console.warn(`[Auth Fail] User email ${userEmail} not synced to Mongo DB`);
+      console.warn(`[Auth Fail] User (clerkId: ${clerkUserId}, email: ${userEmail}) not found in database`);
       return res.status(401).json({ error: "User profile not found in database" });
     }
 

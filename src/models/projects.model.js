@@ -92,6 +92,12 @@ const projectSchema = new mongoose.Schema(
       maxlength: 10,
     },
 
+    displayId: {
+      type: String,
+      trim: true,
+      index: true,
+    },
+
     description: {
       type: String,
       default: "",

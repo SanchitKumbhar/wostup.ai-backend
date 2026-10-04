@@ -1,10 +1,11 @@
 const mongoose = require("mongoose");
-const { Task, WorkspaceMember, User } = require("../models/index");
+const { Task, WorkspaceMember, User, Project, Workspace } = require("../models/index");
 const { Queue } = require("bullmq");
 const redisConnection = require("../redisConfig/bullmqRedisConnection");
 const { scheduleStuckCheck } = require("../queues/stuckTaskQueue");
 const { resolveProjectId } = require("../utils/resolveProject");
 const { invalidateTeamLoadCache } = require("../utils/cacheInvalidator");
+const { generateTaskId, resolveTaskId, ensureDisplayId } = require("../utils/idGenerator");
 
 const deadlineQueue = new Queue("DEADLINE_WORKER", {
   connection: redisConnection,
@@ -40,33 +41,102 @@ async function createTaskService(...args) {
 async function createTaskServiceObject(taskData, userId) {
   try {
     if (!userId) return { statuscode: 400, data: null, message: "User ID is required" };
-    const { workspaceId, title, description, status, actualProgress, assigneeUserId, projectId, milestoneId, dueDate, dependency, sender, emailId, threadId, attachments, emailUrl, priority, sprintId, epicId } = taskData;
+    let { workspaceId, title, description, status, actualProgress, assigneeUserId, projectId, milestoneId, dueDate, dependency, sender, emailId, threadId, attachments, emailUrl, priority, sprintId, epicId, isBacklog, storyPoints, estimatedEffort } = taskData;
 
-    if (!workspaceId || !title || !projectId) {
-      return { statuscode: 400, data: null, message: "Missing required fields: workspaceId, title, projectId" };
+    if (!title || (!projectId && !taskData.projectKey)) {
+      return { statuscode: 400, data: null, message: "Missing required fields: title and projectId" };
     }
 
-    const isMember = await WorkspaceMember.findOne({ workspaceId, userId }).lean();
-    if (!isMember) return { statuscode: 403, data: null, message: "You are not a member of this workspace" };
+    // Resolve projectId if it's a key or ObjectId string
+    const resolvedProjectId = await resolveProjectId(projectId || taskData.projectKey);
+    if (!resolvedProjectId) {
+      return { statuscode: 400, data: null, message: "Invalid or non-existent projectId" };
+    }
+
+    // Auto-resolve workspaceId from Project if not provided
+    if (!workspaceId) {
+      const projDoc = await Project.findById(resolvedProjectId).select("workspaceId").lean();
+      if (projDoc && projDoc.workspaceId) {
+        workspaceId = projDoc.workspaceId;
+      }
+    }
+
+    if (!workspaceId) {
+      return { statuscode: 400, data: null, message: "Missing required field: workspaceId" };
+    }
+
+    const wsObjectId = mongoose.Types.ObjectId.isValid(workspaceId)
+      ? new mongoose.Types.ObjectId(workspaceId)
+      : workspaceId;
+    const userObjectId = mongoose.Types.ObjectId.isValid(userId)
+      ? new mongoose.Types.ObjectId(userId)
+      : userId;
+
+    // Check membership or workspace ownership
+    const isMember = await WorkspaceMember.findOne({ workspaceId: wsObjectId, userId: userObjectId }).lean();
+    let hasAccess = Boolean(isMember);
+
+    if (!hasAccess && Workspace) {
+      const isOwner = await Workspace.findOne({ _id: wsObjectId, ownerUserId: userObjectId }).lean();
+      if (isOwner) {
+        hasAccess = true;
+      }
+    }
+
+    if (!hasAccess) {
+      return { statuscode: 403, data: null, message: "You are not a member of this workspace" };
+    }
+
+    // Normalize status enum
+    let normalizedStatus = (status || "").toLowerCase().trim();
+    if (normalizedStatus === "review") normalizedStatus = "waiting-review";
+    if (!normalizedStatus) normalizedStatus = isBacklog ? "backlog" : "todo";
 
     const parsedProgress = actualProgress === undefined ? 0 : Number(actualProgress);
-    const finalProgress = normalizeProgressByStatus(status, parsedProgress);
+    const finalProgress = normalizeProgressByStatus(normalizedStatus, parsedProgress);
+
+    // Auto-generate clean display ID (e.g. NAV-101 or TSK-101)
+    const displayId = taskData.displayId || (await generateTaskId(resolvedProjectId));
+
+    // Resolve assignee
+    const safeAssigneeId = assigneeUserId && mongoose.Types.ObjectId.isValid(assigneeUserId)
+      ? new mongoose.Types.ObjectId(assigneeUserId)
+      : userObjectId;
+
+    // Resolve optional sub-entity references safely
+    const safeMilestoneId = milestoneId && mongoose.Types.ObjectId.isValid(milestoneId)
+      ? new mongoose.Types.ObjectId(milestoneId)
+      : null;
+    const safeSprintId = sprintId && mongoose.Types.ObjectId.isValid(sprintId)
+      ? new mongoose.Types.ObjectId(sprintId)
+      : null;
+    const safeEpicId = epicId && mongoose.Types.ObjectId.isValid(epicId)
+      ? new mongoose.Types.ObjectId(epicId)
+      : null;
+
+    const safeDependency = Array.isArray(dependency)
+      ? dependency.filter((id) => mongoose.Types.ObjectId.isValid(id)).map((id) => new mongoose.Types.ObjectId(id))
+      : [];
 
     const newTask = {
-      workspaceId,
-      title,
+      workspaceId: wsObjectId,
+      projectId: resolvedProjectId,
+      displayId,
+      title: title.trim(),
       description: description || "",
-      status: status || "backlog",
+      status: normalizedStatus,
       priority: priority || "Medium",
       actualProgress: finalProgress,
-      assigneeUserId: assigneeUserId || userId,
-      projectId,
-      milestoneId: milestoneId || null,
-      sprintId: sprintId || null,
-      epicId: epicId || null,
+      isBacklog: Boolean(isBacklog || normalizedStatus === "backlog"),
+      storyPoints: Number(storyPoints) || 0,
+      estimatedEffort: estimatedEffort !== undefined ? Number(estimatedEffort) : (Number(storyPoints) || null),
+      assigneeUserId: safeAssigneeId,
+      milestoneId: safeMilestoneId,
+      sprintId: safeSprintId,
+      epicId: safeEpicId,
       dueDate: dueDate ? new Date(dueDate) : null,
-      dependency: Array.isArray(dependency) ? dependency : [],
-      createdBy: userId,
+      dependency: safeDependency,
+      createdBy: userObjectId,
       statusEnteredAt: new Date(),
       sender: sender || null,
       emailId: emailId || null,
@@ -78,12 +148,12 @@ async function createTaskServiceObject(taskData, userId) {
     const data = await Task.create(newTask);
 
     // Invalidate Redis dashboard cache
-    invalidateTeamLoadCache(workspaceId);
+    invalidateTeamLoadCache(workspaceId.toString());
 
     if (dueDate) {
       const delay = new Date(dueDate).getTime() - DEADLINE_REMINDER_BEFORE_MS - Date.now();
       if (Number.isFinite(delay) && delay > 0) {
-        await deadlineQueue.add("task", { taskId: data._id, workspaceId, assigneeUserId: assigneeUserId || userId }, { delay, removeOnComplete: true });
+        await deadlineQueue.add("task", { taskId: data._id, workspaceId, assigneeUserId: safeAssigneeId }, { delay, removeOnComplete: true });
       }
     }
 
@@ -99,7 +169,10 @@ async function createTaskServiceObject(taskData, userId) {
 async function updateTaskService(taskId, userId, body) {
   try {
     if (!userId) return { statuscode: 400, data: null };
-    const task = await Task.findById(taskId, { createdBy: 1, status: 1, dueDate: 1, workspaceId: 1 });
+    const resolvedTaskId = await resolveTaskId(taskId);
+    if (!resolvedTaskId) return { statuscode: 404, data: null, message: "Task not found" };
+
+    const task = await Task.findById(resolvedTaskId, { createdBy: 1, status: 1, dueDate: 1, workspaceId: 1 });
     if (!task) return { statuscode: 404, data: null };
 
     // Status updates (drag-drop, sprint assignment) are allowed by any workspace member
@@ -115,7 +188,7 @@ async function updateTaskService(taskId, userId, body) {
     if (body.status !== undefined) body.actualProgress = normalizeProgressByStatus(body.status, body.actualProgress ?? 0);
     if (body.dueDate !== undefined) body.dueDate = body.dueDate ? new Date(body.dueDate) : null;
 
-    const data = await Task.findOneAndUpdate({ _id: taskId }, { $set: body }, { new: true });
+    const data = await Task.findOneAndUpdate({ _id: resolvedTaskId }, { $set: body }, { new: true });
 
     // Invalidate Redis dashboard cache
     invalidateTeamLoadCache(task.workspaceId);
@@ -131,11 +204,14 @@ async function updateTaskService(taskId, userId, body) {
 // 3. DELETE TASK
 async function taskDeleteService(taskId, userId) {
   try {
-    const task = await Task.findById(taskId, { createdBy: 1, workspaceId: 1 });
+    const resolvedTaskId = await resolveTaskId(taskId);
+    if (!resolvedTaskId) return { statuscode: 404, data: null, message: "Task not found" };
+
+    const task = await Task.findById(resolvedTaskId, { createdBy: 1, workspaceId: 1 });
     if (!task) return { statuscode: 404, data: null };
     if (task.createdBy.toString() !== userId.toString()) return { statuscode: 403, data: null };
 
-    const data = await Task.deleteOne({ _id: taskId });
+    const data = await Task.deleteOne({ _id: resolvedTaskId });
 
     // Invalidate Redis dashboard cache
     invalidateTeamLoadCache(task.workspaceId);
@@ -150,7 +226,20 @@ async function taskDeleteService(taskId, userId) {
 // 4. GET TASK BY ID
 async function taskGetByIdService(taskId) {
   try {
-    const data = await Task.findById(taskId).populate("sprintId", "name status").populate("epicId", "name color");
+    const resolvedTaskId = await resolveTaskId(taskId);
+    if (!resolvedTaskId) return { statuscode: 404, data: null, message: "Task not found" };
+
+    const data = await Task.findById(resolvedTaskId)
+      .populate("sprintId", "name status")
+      .populate("epicId", "name color")
+      .lean();
+
+    if (data && !data.displayId) {
+      const project = await Project.findById(data.projectId).select("key name").lean();
+      data.displayId = ensureDisplayId(data, project?.key || "TSK");
+      Task.updateOne({ _id: data._id }, { $set: { displayId: data.displayId } }).exec().catch(() => {});
+    }
+
     return { statuscode: 200, data };
   } catch (error) {
     return { statuscode: 500, data: null };
@@ -163,12 +252,27 @@ async function taskGetAllService(projectId) {
     const resolvedId = await resolveProjectId(projectId);
     if (!resolvedId) return { statuscode: 404, data: null, error: "Project not found" };
 
+    const project = await Project.findById(resolvedId).select("key name").lean();
+    const prefix = (project?.key || "TSK").toUpperCase();
+
     const tasks = await Task.find({ projectId: resolvedId, deletedAt: null })
       .populate("assigneeUserId", "name email avatar")
       .populate("createdBy", "name email avatar")
       .sort({ createdAt: -1 })
       .lean();
-    return { statuscode: 200, data: tasks };
+
+    // Ensure every task has an auto-generated displayId
+    const enrichedTasks = tasks.map((t, idx) => {
+      if (!t.displayId) {
+        const seq = tasks.length - idx;
+        const autoId = `${prefix}-${seq}`;
+        Task.updateOne({ _id: t._id }, { $set: { displayId: autoId } }).exec().catch(() => {});
+        return { ...t, displayId: autoId };
+      }
+      return t;
+    });
+
+    return { statuscode: 200, data: enrichedTasks };
   } catch (error) {
     return { statuscode: 500, data: null, error: error.message };
   }

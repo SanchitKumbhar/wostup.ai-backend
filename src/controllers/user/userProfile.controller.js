@@ -20,14 +20,12 @@ async function getUserProfileController(req, res) {
       });
     }
 
-    if (!mongoose.Types.ObjectId.isValid(targetUserId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid User ID format.",
-      });
+    let user = null;
+    if (mongoose.Types.ObjectId.isValid(targetUserId)) {
+      user = await User.findById(targetUserId).select("-password -passwordHash").lean();
+    } else {
+      user = await User.findOne({ clerkId: targetUserId }).select("-password -passwordHash").lean();
     }
-
-    const user = await User.findById(targetUserId).select("-password -passwordHash").lean();
 
     if (!user) {
       return res.status(404).json({
@@ -80,6 +78,7 @@ async function updateUserProfileController(req, res) {
       phone,
       timezone,
       socialLinks,
+      workingHoursPerDay,
     } = req.body;
 
     // Build update object with only defined fields
@@ -94,6 +93,9 @@ async function updateUserProfileController(req, res) {
     if (avatar !== undefined) updateData.avatar = avatar;
     if (phone !== undefined) updateData.phone = phone;
     if (timezone !== undefined) updateData.timezone = timezone;
+    if (workingHoursPerDay !== undefined && !isNaN(Number(workingHoursPerDay))) {
+      updateData.workingHoursPerDay = Number(workingHoursPerDay);
+    }
     if (socialLinks !== undefined && typeof socialLinks === "object") {
       updateData.socialLinks = socialLinks;
     }

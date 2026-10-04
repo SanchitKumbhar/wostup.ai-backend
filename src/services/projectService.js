@@ -53,6 +53,7 @@ async function projectCreateService(
       workspaceId: new mongoose.Types.ObjectId(workspaceId),
       name: name.trim(),
       key: key.trim().toUpperCase(),
+      displayId: key.trim().toUpperCase(),
       description: description || "",
       projectType: projectType ? projectType.toLowerCase() : "kanban",
       color: color || "#3B82F6",
@@ -238,6 +239,10 @@ async function projectGetByIdService(projectId, userId) {
       }
     }
 
+    if (project) {
+      project.displayId = project.displayId || project.key || "PRJ-1";
+    }
+
     return { statuscode: 200, data: project };
   } catch (error) {
     console.error("Error in projectGetByIdService:", error);
@@ -288,7 +293,12 @@ async function projectGetAllService(workspaceId, userId) {
       .sort({ createdAt: -1 })
       .lean();
 
-    return { statuscode: 200, data: projects };
+    const enrichedProjects = projects.map((p, idx) => ({
+      ...p,
+      displayId: p.displayId || p.key || `PRJ-${idx + 1}`,
+    }));
+
+    return { statuscode: 200, data: enrichedProjects };
   } catch (error) {
     console.error("Error in projectGetAllService:", error);
     return { statuscode: 400, data: null, error: error.message };
